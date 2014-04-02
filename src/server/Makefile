@@ -5,7 +5,7 @@ CFLAGS = -Wall -I../common
 LFLAGS =
 OBJDIR = obj
 OBJECTS = main.o dbaccess.o
-TARGET = register
+TARGET = server
 
 ${TARGET}: ${OBJECTS}
 	mkdir ../../bin || true

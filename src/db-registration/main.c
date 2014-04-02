@@ -3,9 +3,13 @@
 
 int main(int argc, char *argv[])
 {
-	printf("Starting DB test.\n");
+	char name_buf[100];
+	char pass_buf[100];
+	int type;
 
-	struct db_handle *db = open_db();
+	printf("Starting DB registration.\n");
+
+	struct db_handle *db = open_db("db.txt");
 
 	if (db == NULL)
 	{
@@ -23,13 +27,31 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	printf("Database lock acquired.\n");
-	printf("Press enter to unlock\n");
+	printf("Database lock acquired.\n\n");
+	printf("Enter username:\n");
 
-	db_add_user(db, "fede", "holahola123", DB_STUDENT);
-	db_add_user(db, "robert", "huehuehuehue", DB_TEACHER);
+	scanf("%s", name_buf);
 
-	getchar();
+	printf("Enter password:\n");
+
+	scanf("%s", pass_buf);
+
+	printf("Enter type: (0 = Student, 1 = Teacher)\n");
+
+	scanf("%d", &type);
+
+	printf("Adding user: %s, password: %s, type: %d.\n", name_buf, pass_buf, type);
+
+	status = db_add_user(db, name_buf, pass_buf, type);
+
+	if (status == -1)
+	{
+		printf("Error: user already exists, or invalid user type.\n\n");
+	}
+	else
+	{
+		printf("User created.\n\n");
+	}
 
 	status = unlock_db(db);
 	if (status == -1)
