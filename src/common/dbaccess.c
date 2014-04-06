@@ -5,12 +5,6 @@
 #include <unistd.h>
 #include <stdio.h>
 
-#define DB_MAX_USERLEN 30
-#define DB_MIN_USERLEN 4
-#define DB_MAX_PASSLEN 30
-#define DB_MIN_PASSLEN 6
-#define DB_MAX_USERTYPE_NAME 7
-
 #define TRUE 1
 #define FALSE 0
 

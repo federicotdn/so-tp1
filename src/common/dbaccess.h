@@ -1,6 +1,12 @@
 #ifndef DBACCESS_H
 #define DBACCESS_H
 
+#define DB_MAX_USERLEN 30
+#define DB_MIN_USERLEN 4
+#define DB_MAX_PASSLEN 30
+#define DB_MIN_PASSLEN 6
+#define DB_MAX_USERTYPE_NAME 7
+
 struct db_handle;
 enum db_type_code { DB_STUDENT, DB_TEACHER };
 

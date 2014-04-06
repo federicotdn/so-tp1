@@ -4,7 +4,7 @@ CP = cp -f
 CFLAGS = -Wall -I../common
 LFLAGS =
 OBJDIR = obj
-OBJECTS = main.o dbaccess.o
+OBJECTS = main.o dbaccess.o server-local.o
 TARGET = server
 
 ${TARGET}: ${OBJECTS}
@@ -13,6 +13,9 @@ ${TARGET}: ${OBJECTS}
 	
 main.o: main.c
 	${CC} -c main.c ${CFLAGS}
+	
+server-local.o: server-local.c server-local.h
+	${CC} -c server-local.c ${CFLAGS}
 	
 dbaccess.o: ../common/dbaccess.c ../common/dbaccess.h
 	${CC} -c ../common/dbaccess.c ${CFLAGS}
