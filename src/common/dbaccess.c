@@ -57,6 +57,8 @@ struct db_handle *open_db(char *filename)
 		return NULL;
 	}
 
+	setvbuf(db->file, NULL, _IONBF, 0);
+
 	return db;
 }
 
