@@ -4,12 +4,6 @@
 #include <signal.h>
 #include "server-local.h"
 
-int sv_req_sizes[] = {
-	sizeof(struct sv_login_req),
-	sizeof(struct sv_join_req),
-	sizeof(struct sv_create_rq)
-};
-
 #define TRUE 1
 #define FALSE 0
 

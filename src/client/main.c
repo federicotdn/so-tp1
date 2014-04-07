@@ -28,8 +28,7 @@ int main(int argc, char *argv[])
 
 	printf("Ingrese el nombre de usuario:\n");
 	status = read_input(username, DB_MAX_USERLEN);
-	printf("%s\n", username);
-	
+
 	if (status == ERROR_MAX_LENGTH)
 	{
 		printf("Usuario invalido.\n");
@@ -39,7 +38,6 @@ int main(int argc, char *argv[])
 
 	printf("Ingrese la clave:\n");
 	status = read_input(password, DB_MAX_PASSLEN);
-	printf("%s\n", password);
 	if (status == ERROR_MAX_LENGTH)
 	{
 		printf("Clave invalida.\n");
@@ -51,6 +49,7 @@ int main(int argc, char *argv[])
 	
 	if (strcmp("local", mode) == 0)
 	{
+		status = start_client_local(username, password);
 	}
 	else
 	{
@@ -65,7 +64,7 @@ int read_input(char * buff, size_t max_length)
 	int i = 0;
 	char c;
 
-	while (i < max_length && (c = gethchar()) != EOF) 
+	while (i < max_length && (c = getchar()) != EOF && c != '\n') 
 	{
 		buff[i++] = c;
 	}
@@ -73,9 +72,9 @@ int read_input(char * buff, size_t max_length)
 	buff[i] = 0;
 
 
-	if (i > max_length)
+	if (c != EOF && c != '\n' && i >= max_length)
 	{
-		while (gethchar() != EOF);
+		while ((c = getchar()) != EOF & c != '\n');
 		return ERROR_MAX_LENGTH;
 	}
 

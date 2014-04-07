@@ -6,6 +6,7 @@
 
 #define DB_NAME "db.txt"
 #define SERVER_FIFO_IN "sv_fifo_in"
+#define CLIENT_FIFO_IN_PREFIX "cl_fifo"
 
 enum SV_REQ_CODES { SV_LOGIN = 0, SV_JOIN, SV_CREATE };
 
@@ -24,6 +25,8 @@ struct sv_create_rq {
 };
 
 extern int sv_req_sizes[];
+
+char *gen_client_fifo_str( pid_t pid);
 
 #endif
 /* PROTOCOL_H */
