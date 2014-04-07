@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <errno.h>
+#include <stdlib.h>
 #include "client-local.h"
 #include "protocol.h"
 
@@ -16,7 +18,7 @@ int start_client_local(char *username, char *password)
 	char *client_fifo = gen_client_fifo_str(pid);
 	if (client_fifo == NULL)
 	{
-		return NULL;
+		return -1;
 	}
 
 
@@ -29,6 +31,13 @@ int start_client_local(char *username, char *password)
 	free(client_fifo);
 
 	int svfifo = open(SERVER_FIFO_IN, O_WRONLY | O_NONBLOCK);
+	if (svfifo == -1)
+	{
+		return ERROR_SERVER_CONNECTION;
+	}
+
+
+	return 0;
 
 }
 

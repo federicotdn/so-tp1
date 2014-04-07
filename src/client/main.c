@@ -46,10 +46,15 @@ int main(int argc, char *argv[])
 	
 
 
-	
 	if (strcmp("local", mode) == 0)
 	{
 		status = start_client_local(username, password);
+		printf("status: %d\n", status);
+		if (status == ERROR_SERVER_CONNECTION)
+		{
+			printf("Error de comunicacion con el servidor.\n");
+			return -1;
+		}
 	}
 	else
 	{
