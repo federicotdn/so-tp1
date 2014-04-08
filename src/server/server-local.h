@@ -14,12 +14,16 @@ typedef struct client {
 } client_t;
 
 typedef struct server_state {
+	struct db_handle *db;
 	client_t *list_head;
 	int fifo_in;
 } server_state_t ;
 
 int start_server_local();
-int login_user(server_state_t *sv_state);
+int login_user(server_state_t *svstate);
+client_t *sv_add_user(server_state_t *svstate, char *username, pid_t pid, enum db_type_code type);
+void free_users(client_t *head);
+int user_logged(server_state_t *svstate, char *username);
 int setup_fifo();
 
 #endif
