@@ -18,7 +18,7 @@ server-local.o: server-local.c server-local.h
 	${CC} -c server-local.c ${CFLAGS}
 	
 dbaccess.o: ../common/dbaccess.c ../common/dbaccess.h
-	${CC} -c ../common/dbaccess.c ${CFLAGS
+	${CC} -c ../common/dbaccess.c ${CFLAGS}
 
 protocol.o: ../common/protocol.c ../common/protocol.h
 	${CC} -c ../common/protocol.c ${CFLAGS}

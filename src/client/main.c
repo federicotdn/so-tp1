@@ -3,9 +3,10 @@
 #include "client-local.h"
 #include "dbaccess.h"
 
+int read_input(char * buff, size_t min_length, size_t max_length);
+
 int main(int argc, char *argv[])
 {
-
 	char password[DB_MAX_PASSLEN + 1];
 	char username[DB_MAX_USERLEN + 1];
 	int status;
@@ -15,8 +16,6 @@ int main(int argc, char *argv[])
 		printf("Uso: %s [ local | remote ]\n", argv[0]);
 		return 1;
 	}
-	
-
 
 	char *mode = argv[1];
 	if (strcmp("local", mode) != 0 && strcmp("remote", mode) != 0)
@@ -25,31 +24,29 @@ int main(int argc, char *argv[])
 		return 1;		
 	}
 
-
 	printf("Ingrese el nombre de usuario:\n");
-	status = read_input(username, DB_MAX_USERLEN);
+	status = read_input(username, DB_MIN_USERLEN, DB_MAX_USERLEN);
 
-	if (status == ERROR_MAX_LENGTH)
+	if (status != 0)
 	{
 		printf("Usuario invalido.\n");
-		return ERROR_MAX_LENGTH;
+		return 1;
 	}
-
 
 	printf("Ingrese la clave:\n");
-	status = read_input(password, DB_MAX_PASSLEN);
-	if (status == ERROR_MAX_LENGTH)
+	status = read_input(password, DB_MIN_PASSLEN, DB_MAX_PASSLEN);
+	if (status != 0)
 	{
 		printf("Clave invalida.\n");
-		return ERROR_MAX_LENGTH;
+		return 1;
 	}
+
+	printf("\n-- Login usuario: %s --\n\n", username);
 	
-
-
 	if (strcmp("local", mode) == 0)
 	{
 		status = start_client_local(username, password);
-		printf("status: %d\n", status);
+
 		if (status == ERROR_SERVER_CONNECTION)
 		{
 			printf("Error de comunicacion con el servidor.\n");
@@ -64,7 +61,7 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-int read_input(char * buff, size_t max_length)
+int read_input(char * buff, size_t min_length, size_t max_length)
 {
 	int i = 0;
 	char c;
@@ -76,13 +73,17 @@ int read_input(char * buff, size_t max_length)
 
 	buff[i] = 0;
 
-
-	if (c != EOF && c != '\n' && i >= max_length)
+	if (i == max_length && (c = getchar()) != EOF && c != '\n')
 	{
-		while ((c = getchar()) != EOF & c != '\n');
-		return ERROR_MAX_LENGTH;
+		while ((c = getchar()) != EOF && c != '\n')
+			;
+		return ERROR_LENGTH;
 	}
 
-	return 0;
-	
+	if (i < min_length)
+	{
+		return ERROR_LENGTH;
+	}
+
+	return 0;	
 }

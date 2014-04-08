@@ -9,15 +9,17 @@ typedef struct client {
 	pid_t pid;
 	char *username;
 	enum db_type_code type;
+	char *fifo_name;
 	struct client *next;
 } client_t;
 
 typedef struct server_state {
 	client_t *list_head;
+	int fifo_in;
 } server_state_t ;
 
 int start_server_local();
-int login_user(server_state_t *sv_state, struct sv_login_req *req);
+int login_user(server_state_t *sv_state);
 int setup_fifo();
 
 #endif
