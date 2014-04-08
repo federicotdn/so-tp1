@@ -38,8 +38,10 @@ struct sv_destroy_cht_req {
 
 enum SV_RES_CODES { SV_LOGIN_RES = 0, SV_CREATE_JOIN_RES, SV_EXIT_RES };
 
+enum SV_LOGIN_CODES { SV_LOGIN_SUCCESS, SV_LOGIN_ERROR_CRD, SV_LOGIN_ERROR_ACTIVE };
 struct sv_login_res {
-
+	int status;
+	enum db_type_code usr_type;
 };
 
 struct sv_create_join_res {
@@ -50,7 +52,7 @@ struct sv_exit_res {
 
 };
 
-char *gen_client_fifo_str( pid_t pid);
+char *gen_client_fifo_str(pid_t pid);
 
 #endif
 /* PROTOCOL_H */

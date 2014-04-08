@@ -41,11 +41,16 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	printf("\n-- Login usuario: %s --\n\n", username);
+	printf("\n-- Login usuario: %s --\n", username);
 	
 	if (strcmp("local", mode) == 0)
 	{
 		status = start_client_local(username, password);
+
+		if (status != 0)
+		{
+			printf("Error en login. Codigo de error: %d\n", status);
+		}
 
 		if (status == ERROR_SERVER_CONNECTION)
 		{

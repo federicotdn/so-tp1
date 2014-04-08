@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <string.h>
 #include "server-local.h"
 
@@ -74,6 +75,7 @@ int start_server_local()
 	}
 	
 	close_db(sv_state.db);
+	free_sv_users(sv_state.list_head);
 	unlink(SERVER_FIFO_IN);
 	return 0;
 }
@@ -116,6 +118,8 @@ int login_user(server_state_t *sv_state)
 {
 	struct sv_login_req req;
 	client_t *new_usr;
+	int client_fifo;
+	char *client_fifo_str;
 	int status = read(sv_state->fifo_in, &req, sizeof(struct sv_login_req));
 
 	if (status != sizeof(struct sv_login_req))
@@ -126,20 +130,65 @@ int login_user(server_state_t *sv_state)
 	printf("Server: login usuario '%s'\n", req.username);
 	printf("--> PID: %u\n", req.pid);
 
-	if (user_logged(sv_state, req.username))
+	client_fifo_str = gen_client_fifo_str(req.pid);
+	if (client_fifo_str == NULL)
 	{
-		printf("Server: el usuario ya esta logeado.\n");
+		printf("Server: Error al generar nombre de FIFO.\n");
+		return 0;
+	}
+
+	printf("--> Client FIFO: %s\n", client_fifo_str);
+	client_fifo = open(client_fifo_str, O_WRONLY);
+	if (client_fifo == -1)
+	{
+		printf("Server: Error al abrir FIFO de cliente.\n");
 		return 0;
 	}
 
 	enum db_type_code type = db_check_login(sv_state->db, req.username, req.password);
 	if (type == -1)
 	{
-		return -1;
+		printf("Server: usuario o clave invalida.\n");
+		send_login_response(client_fifo, SV_LOGIN_ERROR_CRD, -1);
+		close(client_fifo);
+		return 0;
+	}
+
+	if (user_logged(sv_state, req.username))
+	{
+		printf("Server: el usuario ya esta logeado.\n");
+		send_login_response(client_fifo, SV_LOGIN_ERROR_ACTIVE, -1);
+		close(client_fifo);
+		return 0;
 	}
 
 	new_usr = sv_add_user(sv_state, req.username, req.pid, type);
 	if (new_usr == NULL)
+	{
+		return -1;
+	}
+
+	new_usr->fifo = client_fifo;
+	send_login_response(client_fifo, SV_LOGIN_SUCCESS, type);
+
+	return 0;
+}
+
+int send_login_response(int fifo, int code, enum db_type_code type)
+{
+	int res_type = SV_LOGIN_RES;
+	struct sv_login_res res;
+	res.status = code;
+	res.usr_type = type;
+
+	int status = write(fifo, &res_type, sizeof(int));
+	if (status != sizeof(int))
+	{
+		return -1;
+	}
+
+	status = write(fifo, &res, sizeof(struct sv_login_res));
+	if (status != sizeof(struct sv_login_res))
 	{
 		return -1;
 	}
@@ -149,7 +198,25 @@ int login_user(server_state_t *sv_state)
 
 client_t *sv_add_user(server_state_t *svstate, char *username, pid_t pid, enum db_type_code type)
 {
-
+	client_t *usr = malloc(sizeof(client_t));
+	if (usr == NULL)
+	{
+		return NULL;
+	}
+	
+	usr->username = strdup(username);
+	if (usr->username == NULL)
+	{
+		free(usr);
+		return NULL;
+	}
+	
+	usr->pid = pid;
+	usr->type = type;
+	usr->next = svstate->list_head;
+	svstate->list_head = usr;
+	
+	return usr;
 }
 
 int user_logged(server_state_t *svstate, char *username)
@@ -166,7 +233,14 @@ int user_logged(server_state_t *svstate, char *username)
 	return FALSE;
 }
 
-void free_users(client_t *head)
+void free_sv_users(client_t *head)
 {
-
+	client_t *aux = head;
+	while (aux != NULL)
+	{
+		free(aux->username);
+		client_t *next = aux->next;
+		free(aux);
+		aux = next;
+	}
 }

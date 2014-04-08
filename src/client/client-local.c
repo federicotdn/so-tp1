@@ -29,6 +29,8 @@ int start_client_local(char *username, char *password)
 		return ERROR_FIFO_CREAT;
 	}
 
+	printf("Client FIFO: %s\n", fifo_str);
+
 	int svfifo = open(SERVER_FIFO_IN, O_WRONLY);
 	if (svfifo == -1)
 	{
@@ -50,10 +52,53 @@ int start_client_local(char *username, char *password)
 		return ERROR_FIFO_OPEN;
 	}
 
+	enum db_type_code code = read_server_login(fifo_in, &status);
+	if (status == -1)
+	{
+		return ERROR_SV_READ;
+	}
+
+	if (status != SV_LOGIN_SUCCESS)
+	{
+		if (status == SV_LOGIN_ERROR_CRD)
+		{
+			return ERROR_SV_CREDENTIALS;
+		}
+		if (status == SV_LOGIN_ERROR_ACTIVE)
+		{
+			return ERROR_SV_USER_ACTIVE;
+		}
+	}
+
+	printf("Login completado.  Tipo de usuario: %d\n", code);
+
 	return 0;
 
 }
 
+enum db_type_code read_server_login(int fifo, int *status)
+{
+	struct sv_login_res res;
+	int res_type = -1;
+	int bytes = read(fifo, &res_type, sizeof(int));
+	if (bytes != sizeof(int) || res_type != SV_LOGIN_RES)
+	{
+		printf("Client: error al leer tipo de mensaje, o tipo de mensaje no es SV_LOGIN_RES: %d.\n", res_type);
+		*status = -1;
+		return -1;
+	}
+
+	bytes = read(fifo, &res, sizeof(struct sv_login_res));
+	if (bytes != sizeof(struct sv_login_res))
+	{
+		printf("Client: error al leer respuesta de servidor.\n");
+		*status = -1;
+		return -1;
+	}
+
+	*status = res.status;
+	return res.usr_type;
+}
 
 int send_server_login(int sv_fifo, char *username, char *password)
 {
