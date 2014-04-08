@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
 	
 	if (strcmp("local", mode) == 0)
 	{
-		int status = start_server_local();
+		int status = init_server_local();
 		if (status == -1)
 		{
 			printf("Server error.\n");

@@ -19,8 +19,11 @@ typedef struct server_state {
 	int fifo_in;
 } server_state_t;
 
-int start_server_local();
+int init_server_local();
+int start_server(server_state_t *svstate);
 int login_user(server_state_t *svstate);
+int exit_user(server_state_t *svstate);
+void remove_user(server_state_t *svstate, pid_t pid);
 int send_login_response(int fifo, int code, enum db_type_code type);
 client_t *sv_add_user(server_state_t *svstate, char *username, pid_t pid, enum db_type_code type);
 void free_sv_users(client_t *head);

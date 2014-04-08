@@ -11,55 +11,61 @@
 #define TRUE 1
 #define FALSE 0
 
-int start_client_local(char *username, char *password)
+int init_client_local(char *username, char *password)
 {
-	pid_t pid = getpid();
+	client_state_t state;
+	state.pid = getpid();
+	state.username = username;
 	int status;
-	int fifo_in;
 
-	char *fifo_str = gen_client_fifo_str(pid);
+	char *fifo_str = gen_client_fifo_str(state.pid);
 	if (fifo_str == NULL)
 	{
 		return ERROR_OTHER;
 	}
 	
+	unlink(fifo_str);
 	if (mkfifo(fifo_str, S_IRUSR | S_IWUSR | S_IWGRP) == -1)
 	{
 		free(fifo_str);
 		return ERROR_FIFO_CREAT;
 	}
 
-	printf("Client FIFO: %s\n", fifo_str);
+	printf("Abriendo FIFO(out) servidor: %s\n", SERVER_FIFO_IN);
 
-	int svfifo = open(SERVER_FIFO_IN, O_WRONLY);
-	if (svfifo == -1)
+	state.sv_fifo = open(SERVER_FIFO_IN, O_WRONLY);
+	if (state.sv_fifo == -1)
 	{
 		free(fifo_str);
 		return ERROR_SERVER_CONNECTION;
 	}
 
-	status = send_server_login(svfifo, username, password);
+	status = send_server_login(&state, password);
 	if (status == ERROR_SV_SEND)
 	{
 		free(fifo_str);
 		return ERROR_SV_SEND;
 	}
 
-	fifo_in = open(fifo_str, O_RDONLY);
-	free(fifo_str);
-	if (fifo_in == -1)
+	printf("Abriendo FIFO(in) cliente: %s\n", fifo_str);
+
+	state.in_fifo = open(fifo_str, O_RDONLY);
+	if (state.in_fifo == -1)
 	{
+		free(fifo_str);
 		return ERROR_FIFO_OPEN;
 	}
 
-	enum db_type_code code = read_server_login(fifo_in, &status);
+	enum db_type_code code = read_server_login(state.in_fifo, &status);
 	if (status == -1)
 	{
+		free(fifo_str);
 		return ERROR_SV_READ;
 	}
 
 	if (status != SV_LOGIN_SUCCESS)
 	{
+		free(fifo_str);
 		if (status == SV_LOGIN_ERROR_CRD)
 		{
 			return ERROR_SV_CREDENTIALS;
@@ -71,15 +77,130 @@ int start_client_local(char *username, char *password)
 	}
 
 	printf("Login completado.  Tipo de usuario: %d\n", code);
+	status = start_client(&state);
+
+	close(state.sv_fifo);
+	close(state.in_fifo);
+	unlink(fifo_str);
+	free(fifo_str);
+
+	return status;
+
+}
+
+int start_client(client_state_t *st)
+{
+	char cht_name[CHT_MAX_NAME_LEN + 1];
+	int cmd, status = 0, quit = FALSE;
+
+	while (!quit)
+	{
+		cmd = get_usr_command(cht_name);
+		switch (cmd)
+		{
+			case USR_EXIT:
+				printf("Cerrando sesion en servidor.\n");
+				status = send_server_exit(st);
+				quit = TRUE;
+			break;
+
+			case USR_JOIN:
+
+			break;
+
+			case USR_CREATE:
+
+			break;
+		}
+	}
+
+	return status;
+}
+
+int send_server_exit(client_state_t *st)
+{
+	int status, req_type = SV_EXIT_REQ;
+	struct sv_exit_req req;
+	req.pid = st->pid;
+
+	status = write(st->sv_fifo, &req_type, sizeof(int));
+	if (status != sizeof(int))
+	{
+		return ERROR_SV_SEND;
+	}
+
+	status = write(st->sv_fifo, &req, sizeof(struct sv_exit_req));
+	if (status != sizeof(struct sv_exit_req))
+	{
+		return ERROR_SV_SEND;
+	}
 
 	return 0;
+}
 
+int get_usr_command(char *cht_name)
+{
+	char buf[CHT_MAX_NAME_LEN + 9];
+
+	printf("Comandos:\n   /exit\n   /join [nombre]\n   /create [nombre]\n");
+	while (TRUE)
+	{
+		printf("Ingrese un comando:\n--> ");
+		read_input(buf, 5, CHT_MAX_NAME_LEN + 8);
+
+		if (strcmp(buf, "/exit") == 0)
+		{
+			return USR_EXIT;
+		}
+
+		if (strncmp(buf, "/join ", 6) == 0)
+		{
+			strcpy(cht_name, buf + 6);
+			return USR_JOIN;
+		}
+
+		if (strncmp(buf, "/create ", 8) == 0)
+		{
+			strcpy(cht_name, buf + 8);
+			return USR_CREATE;
+		}
+
+		printf("Comando invalido.\n");
+	}
+}
+
+int read_input(char * buff, size_t min_length, size_t max_length)
+{
+	int i = 0;
+	char c;
+
+	while (i < max_length && (c = getchar()) != EOF && c != '\n') 
+	{
+		buff[i++] = c;
+	}
+
+	buff[i] = 0;
+
+	if (i == max_length && (c = getchar()) != EOF && c != '\n')
+	{
+		while ((c = getchar()) != EOF && c != '\n')
+			;
+		return ERROR_LENGTH;
+	}
+
+	if (i < min_length)
+	{
+		return ERROR_LENGTH;
+	}
+
+	return 0;	
 }
 
 enum db_type_code read_server_login(int fifo, int *status)
 {
 	struct sv_login_res res;
 	int res_type = -1;
+	printf("Client: leyendo respuesta...\n");
 	int bytes = read(fifo, &res_type, sizeof(int));
 	if (bytes != sizeof(int) || res_type != SV_LOGIN_RES)
 	{
@@ -96,26 +217,28 @@ enum db_type_code read_server_login(int fifo, int *status)
 		return -1;
 	}
 
+	printf("Client: listo.\n");
+
 	*status = res.status;
 	return res.usr_type;
 }
 
-int send_server_login(int sv_fifo, char *username, char *password)
+int send_server_login(client_state_t *st, char *password)
 {
 	int req_type = SV_LOGIN_REQ;
 	int status;
 	struct sv_login_req req;
-	req.pid = getpid();
-	strcpy(req.username, username);
+	req.pid = st->pid;
+	strcpy(req.username, st->username);
 	strcpy(req.password, password);
 
-	status = write(sv_fifo, &req_type, sizeof(int));
+	status = write(st->sv_fifo, &req_type, sizeof(int));
 	if (status != sizeof(int))
 	{
 		return ERROR_SV_SEND;
 	}
 
-	status = write(sv_fifo, &req, sizeof(struct sv_login_req));
+	status = write(st->sv_fifo, &req, sizeof(struct sv_login_req));
 	if (status != sizeof(struct sv_login_req))
 	{
 		return ERROR_SV_SEND;

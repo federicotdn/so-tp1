@@ -3,8 +3,6 @@
 #include "client-local.h"
 #include "dbaccess.h"
 
-int read_input(char * buff, size_t min_length, size_t max_length);
-
 int main(int argc, char *argv[])
 {
 	char password[DB_MAX_PASSLEN + 1];
@@ -45,7 +43,7 @@ int main(int argc, char *argv[])
 	
 	if (strcmp("local", mode) == 0)
 	{
-		status = start_client_local(username, password);
+		status = init_client_local(username, password);
 
 		if (status != 0)
 		{
@@ -64,31 +62,4 @@ int main(int argc, char *argv[])
 	}
 
 	return 0;
-}
-
-int read_input(char * buff, size_t min_length, size_t max_length)
-{
-	int i = 0;
-	char c;
-
-	while (i < max_length && (c = getchar()) != EOF && c != '\n') 
-	{
-		buff[i++] = c;
-	}
-
-	buff[i] = 0;
-
-	if (i == max_length && (c = getchar()) != EOF && c != '\n')
-	{
-		while ((c = getchar()) != EOF && c != '\n')
-			;
-		return ERROR_LENGTH;
-	}
-
-	if (i < min_length)
-	{
-		return ERROR_LENGTH;
-	}
-
-	return 0;	
 }

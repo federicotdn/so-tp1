@@ -9,9 +9,9 @@
 #define TRUE 1
 #define FALSE 0
 
-int start_server_local()
+int init_server_local()
 {
-	int error = FALSE;
+	int status;
 	server_state_t sv_state;
 	
 	sv_state.list_head = NULL;
@@ -29,22 +29,36 @@ int start_server_local()
 		return -1;
 	}
 	
+	status = start_server(&sv_state);
+	
+	close_db(sv_state.db);
+	free_sv_users(sv_state.list_head);
+	unlink(SERVER_FIFO_IN);
+	return status;
+}
+
+int start_server(server_state_t *svstate)
+{
+	int error = FALSE;
+
 	printf("Server: loop principal.\n");
 	while (!error)
 	{
 		int req_type;
-		int status = read(sv_state.fifo_in, &req_type, sizeof(int));
+		int status = read(svstate->fifo_in, &req_type, sizeof(int));
 		if (status < sizeof(int))
 		{
 			error = TRUE;
 			break;
 		}
+
+		printf("\nServer: codigo %d recibido.\n", req_type);
 		
 		switch (req_type)
 		{
 			case SV_LOGIN_REQ:
 				
-				status = login_user(&sv_state);
+				status = login_user(svstate);
 				if (status == -1)
 				{
 					error = TRUE;
@@ -62,6 +76,12 @@ int start_server_local()
 
 			case SV_EXIT_REQ:
 
+				status = exit_user(svstate);
+				if (status == -1)
+				{
+					error = TRUE;
+				}
+
 			break;
 
 			case SV_DESTROY_REQ:
@@ -73,15 +93,13 @@ int start_server_local()
 			break;
 		}
 	}
-	
-	close_db(sv_state.db);
-	free_sv_users(sv_state.list_head);
-	unlink(SERVER_FIFO_IN);
+
 	return 0;
 }
 
 int setup_fifo()
 {	
+	unlink(SERVER_FIFO_IN);
 	if (mkfifo(SERVER_FIFO_IN, S_IRUSR | S_IWUSR | S_IWGRP) == -1)
 	{
 		printf("Server: Error al crear FIFO.\n");
@@ -233,6 +251,51 @@ int user_logged(server_state_t *svstate, char *username)
 	return FALSE;
 }
 
+int exit_user(server_state_t *svstate)
+{
+	struct sv_exit_req req;
+	int status = read(svstate->fifo_in, &req, sizeof(struct sv_exit_req));
+	if (status != sizeof(struct sv_exit_req))
+	{
+		return -1;
+	}
+
+	printf("Server: usuario PID: %u termino la sesion.\n", req.pid);
+	remove_user(svstate, req.pid);
+
+	return 0;
+}
+
+void remove_user(server_state_t *svstate, pid_t pid)
+{
+	client_t dummy;
+	client_t *aux = &dummy;
+	dummy.next = svstate->list_head;
+
+	while (aux->next != NULL)
+	{
+		client_t *next = aux->next;
+		if (next->pid == pid)
+		{
+			aux->next = next->next;
+			free(next->username);
+			close(next->fifo);
+			free(next);
+
+			printf("--> PID: %u eliminado.\n", pid);
+
+			if (dummy.next == NULL)
+			{
+				svstate->list_head = NULL;
+			}
+
+			return;
+		}
+
+		aux = aux->next;
+	}
+}
+
 void free_sv_users(client_t *head)
 {
 	client_t *aux = head;
@@ -244,3 +307,4 @@ void free_sv_users(client_t *head)
 		aux = next;
 	}
 }
+
