@@ -2,6 +2,7 @@
 #define CLIENT_LOCAL_H
 
 #include "dbaccess.h"
+#include <sys/types.h>
 
 #define ERROR_LENGTH 1
 #define ERROR_SERVER_CONNECTION 2

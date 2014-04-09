@@ -1,7 +1,7 @@
 CC = gcc
 RM = rm -f
 CP = cp -f
-CFLAGS = -Wall -I../common
+CFLAGS = -Wall -I../common -g
 LFLAGS =
 OBJDIR = obj
 OBJECTS = main.o dbaccess.o server-local.o protocol.o
