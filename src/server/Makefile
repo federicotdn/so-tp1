@@ -4,7 +4,7 @@ CP = cp -f
 CFLAGS = -Wall -I../common -g
 LFLAGS =
 OBJDIR = obj
-OBJECTS = main.o dbaccess.o server-local.o protocol.o
+OBJECTS = main.o dbaccess.o server-local.o protocol.o chatroom-local.o
 TARGET = server
 
 ${TARGET}: ${OBJECTS}
@@ -22,6 +22,9 @@ dbaccess.o: ../common/dbaccess.c ../common/dbaccess.h
 
 protocol.o: ../common/protocol.c ../common/protocol.h
 	${CC} -c ../common/protocol.c ${CFLAGS}
+
+chatroom-local.o: chatroom-local.c chatroom-local.h
+	${CC} -c chatroom-local.c ${CFLAGS}
 
 clean:
 	${RM} ${OBJECTS} ${TARGET}

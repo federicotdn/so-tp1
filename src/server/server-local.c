@@ -9,12 +9,20 @@
 #define TRUE 1
 #define FALSE 0
 
+
+
+client_t *get_client(client_t *head, pid_t pid);
+int send_create_response(server_state_t *svstate, client_t *client, int code);	
+int chatroom_exists(chatroom_t *head, char *name);
+int fork_chat(server_state_t *svstate, char *name, client_t client);
+
 int init_server_local()
 {
 	int status;
 	server_state_t sv_state;
 	
 	sv_state.list_head = NULL;
+	sv_state.chat_head = NULL;
 	
 	sv_state.db = open_db(DB_NAME);
 	if (!sv_state.db)
@@ -73,7 +81,13 @@ int start_server(server_state_t *svstate)
 			break;
 			
 			case SV_CREATE_REQ:
-			
+
+				status = create_chatroom(svstate);
+				if (status == -1)
+				{
+					error = TRUE;
+				}
+
 			break;
 
 			case SV_EXIT_REQ:
@@ -97,6 +111,102 @@ int start_server(server_state_t *svstate)
 	}
 
 	return 0;
+}
+
+
+int create_chatroom(server_state_t *svstate)
+{
+	struct sv_create_req req;
+	int status = read(sv_state->fifo_in, &req, sizeof(struct sv_create_req));
+
+	if (status != sizeof(struct sv_create_req))
+	{
+		return -1;
+	}	
+
+	client_t *client = get_client(svstate->list_head, req.pid);
+
+	if (client == NULL)
+	{
+		return -1;
+	}
+
+	status = SV_CREATE_SUCCESS;
+
+	if (client->type != DB_TEACHER) 
+	{
+		status = SV_CREATE_ERROR_PRIV;
+	}
+
+	if (chatroom_exists(svstate, req.name) == 1)
+	{
+		status = SV_CREATE_ERROR_NAME;
+	}
+
+	if (status == SV_CREATE_SUCCESS){
+		fork_chat(svstate, req.name);
+	}
+	
+
+	send_create_response(svstate, client, status);
+
+	return 0;
+
+}
+
+int fork_chat(server_state_t *svstate, char *name, client_t client)
+{
+	chatroom_t *chatroom = malloc(sizeof(chatroom_t));
+	int file_desc[2];
+	int fork, status;
+
+	if (chatroom == NULL)
+	{
+		return -1;
+	} 
+
+	chatroom->name = strdup(name);
+
+	if (chatroom->name == NULL)
+	{
+		free(chatroom);
+		return -1;
+	}
+
+	chatroom->next = svstate->chat_head;
+	svstate->chat_head = chatroom;
+
+	if (pipe(file_des) == -1)
+	{
+		return -1;
+	}
+
+	chatroom->pipe_write = file_des[1];
+
+	switch (fork = fork()){
+		case -1:
+			return -1;
+		case 0:
+			if (close(file_des[1) == -1)
+				{
+	        		exit(1);
+				}
+				status = init_chatroom(file_des[0], name, client);
+
+				exit(status);
+			break;
+		default:
+			if (close(file_des[0]) == -1)
+			{
+        		return -1;
+			}
+			chatroom->pid = fork;
+			break;
+
+
+	return 0;
+
+	}
 }
 
 int setup_fifo()
@@ -326,5 +436,34 @@ void free_sv_users(client_t *head)
 		free(aux);
 		aux = next;
 	}
+}
+
+client_t *get_client(client_t *head, pid_t pid)
+{
+	while (head != NULL)
+	{
+		if (head->pid == pid)
+		{
+			return head;
+		}
+		head = head->next;
+	}
+
+	return NULL;
+}
+
+int chatroom_exists(chatroom_t *head, char *name)
+{
+
+	while (head != null)
+	{
+		if (strcmp(head->name, name) == 0)
+		{
+			return TRUE;
+		}
+		head = head->next;
+	}
+
+	return FALSE;
 }
 

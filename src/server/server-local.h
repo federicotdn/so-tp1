@@ -5,6 +5,14 @@
 #include "protocol.h"
 #include "dbaccess.h"
 
+typedef struct chatroom {
+	pid_t pid;
+	char *name;
+	char *mq_name;
+	int pipe_write;
+	struct chatroom *next;
+} chatroom_t;
+
 typedef struct client {
 	pid_t pid;
 	char *username;
@@ -17,12 +25,14 @@ typedef struct server_state {
 	struct db_handle *db;
 	client_t *list_head;
 	int fifo_in;
+	chatroom_t *chat_head;
 } server_state_t;
 
 int init_server_local();
 int start_server(server_state_t *svstate);
 int login_user(server_state_t *svstate);
 int exit_user(server_state_t *svstate);
+int create_chatroom(server_state_t *svstate);
 void remove_user(server_state_t *svstate, pid_t pid);
 int send_login_response(int fifo, int code, enum db_type_code type);
 client_t *sv_add_user(server_state_t *svstate, char *username, pid_t pid, enum db_type_code type);
