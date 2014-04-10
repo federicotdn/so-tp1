@@ -5,16 +5,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include "server-local.h"
+#include "chatroom-local.h"
 
 #define TRUE 1
 #define FALSE 0
 
-
-
 client_t *get_client(client_t *head, pid_t pid);
 int send_create_response(server_state_t *svstate, client_t *client, int code);	
 int chatroom_exists(chatroom_t *head, char *name);
-int fork_chat(server_state_t *svstate, char *name, client_t client);
+int fork_chat(server_state_t *svstate, char *name, pid_t creator);
 
 int init_server_local()
 {
@@ -53,9 +52,8 @@ int start_server(server_state_t *svstate)
 	while (!error)
 	{
 		int req_type;
-        printf("Server: enter read\n");
+		
 		int status = read(svstate->fifo_in, &req_type, sizeof(int));
-        printf("Server: exit read\n");
 		if (status < sizeof(int))
 		{
 			error = TRUE;
@@ -117,7 +115,7 @@ int start_server(server_state_t *svstate)
 int create_chatroom(server_state_t *svstate)
 {
 	struct sv_create_req req;
-	int status = read(sv_state->fifo_in, &req, sizeof(struct sv_create_req));
+	int status = read(svstate->fifo_in, &req, sizeof(struct sv_create_req));
 
 	if (status != sizeof(struct sv_create_req))
 	{
@@ -138,13 +136,14 @@ int create_chatroom(server_state_t *svstate)
 		status = SV_CREATE_ERROR_PRIV;
 	}
 
-	if (chatroom_exists(svstate, req.name) == 1)
+	if (chatroom_exists(svstate->chat_head, req.name))
 	{
 		status = SV_CREATE_ERROR_NAME;
 	}
 
-	if (status == SV_CREATE_SUCCESS){
-		fork_chat(svstate, req.name);
+	if (status == SV_CREATE_SUCCESS)
+	{
+		fork_chat(svstate, req.name, client->pid);
 	}
 	
 
@@ -154,11 +153,11 @@ int create_chatroom(server_state_t *svstate)
 
 }
 
-int fork_chat(server_state_t *svstate, char *name, client_t client)
+int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 {
 	chatroom_t *chatroom = malloc(sizeof(chatroom_t));
-	int file_desc[2];
-	int fork, status;
+	int file_des[2];
+	int fork_pid, status;
 
 	if (chatroom == NULL)
 	{
@@ -166,7 +165,6 @@ int fork_chat(server_state_t *svstate, char *name, client_t client)
 	} 
 
 	chatroom->name = strdup(name);
-
 	if (chatroom->name == NULL)
 	{
 		free(chatroom);
@@ -183,30 +181,39 @@ int fork_chat(server_state_t *svstate, char *name, client_t client)
 
 	chatroom->pipe_write = file_des[1];
 
-	switch (fork = fork()){
+	switch (fork_pid = fork())
+	{
 		case -1:
 			return -1;
+
 		case 0:
-			if (close(file_des[1) == -1)
+
+			if (close(file_des[1]) == -1)
 				{
 	        		exit(1);
 				}
-				status = init_chatroom(file_des[0], name, client);
+				status = init_chatroom(file_des[0], name, creator);
 
 				exit(status);
-			break;
+		break;
+
 		default:
+
 			if (close(file_des[0]) == -1)
 			{
         		return -1;
 			}
-			chatroom->pid = fork;
-			break;
+			chatroom->pid = fork_pid;
 
+		break;
+	}
 
 	return 0;
+}
 
-	}
+int send_create_response(server_state_t *svstate, client_t *client, int code)
+{
+
 }
 
 int setup_fifo()
@@ -276,7 +283,7 @@ int login_user(server_state_t *sv_state)
 		return 0;
 	}
 
-	enum db_type_code type = db_check_login(sv_state->db, req.username, req.password);
+	int type = db_check_login(sv_state->db, req.username, req.password);
 
 	if (type == -1)
 	{
@@ -285,7 +292,6 @@ int login_user(server_state_t *sv_state)
 		close(client_fifo);
 		return 0;
 	}
-
 
 	if (user_logged(sv_state, req.username))
 	{
@@ -455,7 +461,7 @@ client_t *get_client(client_t *head, pid_t pid)
 int chatroom_exists(chatroom_t *head, char *name)
 {
 
-	while (head != null)
+	while (head != NULL)
 	{
 		if (strcmp(head->name, name) == 0)
 		{
