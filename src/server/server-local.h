@@ -4,4 +4,4 @@
 int init_server_local();
 
 #endif
-/* SERVER_LOCAL_H */
+/* SERVER_LOCAL */

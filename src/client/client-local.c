@@ -122,15 +122,10 @@ int send_server_exit(client_state_t *st)
 	int status, req_type = SV_EXIT_REQ;
 	struct sv_exit_req req;
 	req.pid = st->pid;
-
-	status = write(st->sv_fifo, &req_type, sizeof(int));
-	if (status != sizeof(int))
-	{
-		return ERROR_SV_SEND;
-	}
-
-	status = write(st->sv_fifo, &req, sizeof(struct sv_exit_req));
-	if (status != sizeof(struct sv_exit_req))
+	
+	status = write_server(st->sv_fifo, &req, sizeof(struct sv_exit_req), req_type);
+	
+	if (status != 0)
 	{
 		return ERROR_SV_SEND;
 	}
@@ -231,18 +226,17 @@ int send_server_login(client_state_t *st, char *password)
 	req.pid = st->pid;
 	strcpy(req.username, st->username);
 	strcpy(req.password, password);
-
-	status = write(st->sv_fifo, &req_type, sizeof(int));
-	if (status != sizeof(int))
-	{
-		return ERROR_SV_SEND;
-	}
-
-	status = write(st->sv_fifo, &req, sizeof(struct sv_login_req));
-	if (status != sizeof(struct sv_login_req))
+	
+	status = write_server(st->sv_fifo, &req, sizeof(struct sv_login_req), req_type);
+	
+	if (status != 0)
 	{
 		return ERROR_SV_SEND;
 	}
 
 	return 0;
 }
+
+
+
+

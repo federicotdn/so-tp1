@@ -6,8 +6,13 @@
 
 #define DB_NAME "db.txt"
 #define SERVER_FIFO_IN "sv_fifo_in"
+#define SERVER_SEMAPHORE "sv_semaphore"
 #define CLIENT_FIFO_IN_PREFIX "cl_fifo"
+#define CLIENT_FIFO_MAX_NAME 30
+#define CHT_MQ_PREFIX "mq_"
 #define CHT_MAX_NAME_LEN 20
+#define CHT_MAX_MQ_NAME 10
+
 
 
 /* CLIENT/CHAT -> SERVER requests */
@@ -42,17 +47,23 @@ struct sv_destroy_cht_req {
 enum SV_RES_CODES { SV_LOGIN_RES = 0, SV_CREATE_JOIN_RES };
 
 enum SV_LOGIN_CODES { SV_LOGIN_SUCCESS, SV_LOGIN_ERROR_CRD, SV_LOGIN_ERROR_ACTIVE };
-enum SV_CREATE_CODES { SV_CREATE_SUCCESS, SV_CREATE_ERROR_NAME, SV_CREATE_ERROR_PRIV };
+
 struct sv_login_res {
 	int status;
 	enum db_type_code usr_type;
 };
 
-struct sv_create_join_res {
+enum SV_CREATE_CODES { SV_CREATE_SUCCESS, SV_CREATE_ERROR_NAME, SV_CREATE_ERROR_PRIV };
+enum SV_JOIN_CODES   { SV_JOIN_SUCCESS, SV_JOIN_ERROR_NAME };
 
+struct sv_create_join_res {
+    int status;
+    char mq_name[CHT_MAX_MQ_NAME + 1];
 };
 
 char *gen_client_fifo_str(pid_t pid);
+char *gen_mq_name_str(pid_t pid);
+int write_server(int fd, void *req_struct, size_t req_size, int req_type);
 
 #endif
 /* PROTOCOL_H */

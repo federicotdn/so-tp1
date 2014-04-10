@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <semaphore.h>
 
 #include "server-local.h"
 #include "chatroom-local.h"
@@ -69,13 +70,20 @@ int init_server_local()
 	{
 		return -1;
 	}
+	printf("Server: Creando semaforo\n");
+	sem_t *sem = sem_open(SERVER_SEMAPHORE, O_CREAT, S_IRUSR | S_IWUSR , 1);
+	if (sem == SEM_FAILED)
+	{
+	    return -1;
+	}
 	
 	sv_state.db = open_db(DB_NAME);
 	if (!sv_state.db)
 	{
 		return -1;
 	}
-
+    
+    
 	sv_state.fifo_in = setup_fifo();
 	if (sv_state.fifo_in == -1)
 	{
@@ -267,7 +275,39 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 
 int send_create_response(server_state_t *svstate, client_t *client, int code)
 {
-
+    struct sv_create_join_res res;
+    res.status = code;
+    
+    if (code == SV_CREATE_SUCCESS)
+    {
+        res.mq_name[0] = 0;
+    }
+    else
+    {
+       char *mq_name = gen_mq_name_str(client->pid);
+       if (mq_name == NULL)
+       {
+           return -1;
+       }
+       
+       strcpy(res.mq_name, mq_name);
+       free(mq_name);
+    }
+    
+    int res_type = SV_CREATE_JOIN_RES;
+    int status = write(client->fifo, &res_type, sizeof(int));
+    if (status != sizeof(int))
+    {
+        return -1;
+    }
+    
+    status = write(client->fifo, &res, sizeof(struct sv_create_join_res));
+    if (status != sizeof(struct sv_create_join_res))
+    {
+        return -1;
+    }
+    
+    return 0;
 }
 
 int setup_fifo()
@@ -501,6 +541,14 @@ void free_sv_users(client_t *head)
 void free_sv_chats(chatroom_t *head)
 {
 	/* esta funcion devuelve un tablero de N*N */
+	while (head != NULL)
+	{
+	    chatroom_t *aux = head;
+	    free(head->name);
+	    free(head->mq_name);
+	    head = head->next;
+	    free(aux);
+	}
 }
 
 client_t *get_client(client_t *head, pid_t pid)
@@ -547,6 +595,7 @@ void exit_cleanup(int sig)
 		free_sv_chats(gbl_state->chat_head);
 		close(gbl_state->fifo_in);
 		unlink(SERVER_FIFO_IN);
+		sem_unlink(SERVER_SEMAPHORE);
 
 		exit(0);
 	}

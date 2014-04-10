@@ -1,8 +1,8 @@
 CC = gcc
 RM = rm -f
 CP = cp -f
-CFLAGS = -Wall -I../common
-LFLAGS =
+CFLAGS = -Wall -I../common -g
+LFLAGS = -lpthread
 OBJDIR = obj
 OBJECTS = main.o dbaccess.o client-local.o protocol.o
 TARGET = client

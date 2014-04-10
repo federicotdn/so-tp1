@@ -44,7 +44,7 @@ struct db_handle *open_db(char *filename)
 {
 	struct db_handle *db = malloc(sizeof(struct db_handle));
 	
-	db->file = fopen(filename, "r+");
+	db->file = fopen(filename, "a+");
 	if (db->file == NULL)
 	{
 		free(db);
