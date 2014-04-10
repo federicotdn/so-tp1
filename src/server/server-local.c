@@ -4,24 +4,71 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+
 #include "server-local.h"
 #include "chatroom-local.h"
+#include "protocol.h"
+#include "dbaccess.h"
 
 #define TRUE 1
 #define FALSE 0
+
+typedef struct chatroom {
+	pid_t pid;
+	char *name;
+	char *mq_name;
+	int pipe_write;
+	struct chatroom *next;
+} chatroom_t;
+
+typedef struct client {
+	pid_t pid;
+	char *username;
+	enum db_type_code type;
+	int fifo;
+	struct client *next;
+} client_t;
+
+typedef struct server_state {
+	struct db_handle *db;
+	client_t *list_head;
+	int fifo_in;
+	chatroom_t *chat_head;
+} server_state_t;
 
 client_t *get_client(client_t *head, pid_t pid);
 int send_create_response(server_state_t *svstate, client_t *client, int code);	
 int chatroom_exists(chatroom_t *head, char *name);
 int fork_chat(server_state_t *svstate, char *name, pid_t creator);
+void free_sv_users(client_t *head);
+void free_sv_chats(chatroom_t *head);
+void exit_cleanup(int sig);
+int start_server(server_state_t *svstate);
+int login_user(server_state_t *svstate);
+int exit_user(server_state_t *svstate);
+int create_chatroom(server_state_t *svstate);
+void remove_user(server_state_t *svstate, pid_t pid);
+int send_login_response(int fifo, int code, enum db_type_code type);
+client_t *sv_add_user(server_state_t *svstate, char *username, pid_t pid, enum db_type_code type);
+int user_logged(server_state_t *svstate, char *username);
+int setup_fifo();
+
+static server_state_t *gbl_state = NULL;
 
 int init_server_local()
 {
 	int status;
 	server_state_t sv_state;
+	gbl_state = &sv_state;
 	
 	sv_state.list_head = NULL;
 	sv_state.chat_head = NULL;
+
+	if (signal(SIGINT, exit_cleanup) == SIG_ERR)
+	{
+		return -1;
+	}
 	
 	sv_state.db = open_db(DB_NAME);
 	if (!sv_state.db)
@@ -38,8 +85,10 @@ int init_server_local()
 	
 	status = start_server(&sv_state);
 	
+	gbl_state = NULL;
 	close_db(sv_state.db);
 	free_sv_users(sv_state.list_head);
+	close(sv_state.fifo_in);
 	unlink(SERVER_FIFO_IN);
 	return status;
 }
@@ -146,7 +195,6 @@ int create_chatroom(server_state_t *svstate)
 		fork_chat(svstate, req.name, client->pid);
 	}
 	
-
 	send_create_response(svstate, client, status);
 
 	return 0;
@@ -176,6 +224,7 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 
 	if (pipe(file_des) == -1)
 	{
+		free(chatroom);
 		return -1;
 	}
 
@@ -184,17 +233,22 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 	switch (fork_pid = fork())
 	{
 		case -1:
+
+			free(chatroom);
 			return -1;
+
+		break;
 
 		case 0:
 
 			if (close(file_des[1]) == -1)
-				{
-	        		exit(1);
-				}
-				status = init_chatroom(file_des[0], name, creator);
+			{
+	        	exit(1);
+			}
+			status = init_chatroom(file_des[0], name, creator);
 
-				exit(status);
+			exit(status);
+
 		break;
 
 		default:
@@ -444,6 +498,11 @@ void free_sv_users(client_t *head)
 	}
 }
 
+void free_sv_chats(chatroom_t *head)
+{
+	/* esta funcion devuelve un tablero de N*N */
+}
+
 client_t *get_client(client_t *head, pid_t pid)
 {
 	while (head != NULL)
@@ -473,3 +532,22 @@ int chatroom_exists(chatroom_t *head, char *name)
 	return FALSE;
 }
 
+void exit_cleanup(int sig)
+{
+	if (sig == SIGINT)
+	{
+		if (gbl_state == NULL)
+		{
+			return;
+		}
+
+		printf("\nServer: SIGINT recibido. Exit.\n");
+		close_db(gbl_state->db);
+		free_sv_users(gbl_state->list_head);
+		free_sv_chats(gbl_state->chat_head);
+		close(gbl_state->fifo_in);
+		unlink(SERVER_FIFO_IN);
+
+		exit(0);
+	}
+}
