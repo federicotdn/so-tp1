@@ -8,8 +8,97 @@
 #include "client-local.h"
 #include "protocol.h"
 
+#include <ncurses.h>
+#include <pthread.h>
+
 #define TRUE 1
 #define FALSE 0
+
+WINDOW *receive;
+WINDOW *text;
+
+void putch(WINDOW *win, char ch)
+{
+     // Add the character ch to the specified "window".  The
+     // WINDOW is one of the two ncurses windows, me and them,
+     // that are used in this program.
+	if (ch == 4 || ch == 7) // Translate left-arrow, backspace to CTL-H
+    {
+    	ch = '\b';
+    }
+
+  	if (ch < ' ' && ch != '\t' && ch != '\n' && ch != '\b') 
+  	{
+        // \t, \n, and \b are the only control characters that
+        // are interpreted by wechochar().  Others should be ignored.
+    	return;
+	}
+
+	wechochar(win,ch);
+	if (ch == '\b')
+	{
+      	// \b only moves the cursor -- I also want to erase the character.
+    	wdelch(win);
+    	refresh();
+	}
+}
+
+
+void putchars(WINDOW *win, const char *str) 
+{
+     // Put all the chars in str into the specified WINDOW.
+	while (*str) 
+	{
+    	putch(win, *str);
+    	str++;
+	}
+}
+
+void *receive_thread(void *arg)
+{
+    while (1) 
+    {
+    	sleep(1);
+    	putchars(receive, "mensaje\n");
+    }
+}
+
+void enter_chat_mode()
+{
+	/* ncurses tests */
+
+	initscr();
+	cbreak();
+	noecho();
+	intrflush(stdscr, FALSE);
+
+	receive = newwin(10, COLS, 0, 0);
+	text = newwin(10, COLS, 11, 0);
+
+	idlok(text, TRUE);
+  	scrollok(text, TRUE);
+  	keypad(text, TRUE);
+  	idlok(receive, TRUE);
+  	scrollok(receive, TRUE);
+
+  	refresh();
+
+  	pthread_t rec_thread;
+  	pthread_create(&rec_thread, NULL, receive_thread, NULL);
+
+  	char ch;
+
+  	while (1) 
+  	{
+         ch = wgetch(text);  // Get character typed by user.
+         if (ch == '.')
+            break;
+         putch(text, ch);
+    }
+
+    endwin();
+}
+
 
 int init_client_local(char *username, char *password)
 {
@@ -105,7 +194,8 @@ int start_client(client_state_t *st)
 			break;
 
 			case USR_JOIN:
-
+				enter_chat_mode();
+				quit = TRUE;
 			break;
 
 			case USR_CREATE:
