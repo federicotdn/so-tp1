@@ -110,11 +110,57 @@ int start_client(client_state_t *st)
 
 			case USR_CREATE:
 
+				if (st->type != DB_TEACHER)
+				{
+					printf("Solo los profesores pueden crear chatrooms.\n");
+				}
+				else
+				{
+					printf("Creando chatroom '%s'\n", cht_name);
+					status = send_server_create(st, cht_name);
+					if (status != 0)
+					{
+						printf("Client: error al enviar sv_create_req.\n");
+						quit = TRUE;
+					}
+
+					status = read_create_join_res(st);
+				}
+
 			break;
 		}
 	}
 
 	return status;
+}
+
+int read_create_join_res(client_state_t *st)
+{
+	struct sv_create_join_res res;
+	int res_type = -1, status;
+
+	status = read(st->in_fifo, &res_type, sizeof(int));
+	if (status != sizeof(int) || res_type != SV_CREATE_JOIN_RES)
+	{
+		printf("Client: respuesta no es join/create.\n");
+		return -1;
+	}
+
+	status = read(st->in_fifo, &res, sizeof(struct sv_create_join_res));
+	if (status != sizeof(struct sv_create_join_res))
+	{
+		printf("Client: error al leer sv_create_join_res.\n");
+		return -1;
+	}
+
+	//manejar errores
+
+	if (res.status == SV_CREATE_SUCCESS || res.status == SV_JOIN_SUCCESS)
+	{
+		return 0;
+	}
+	
+	return -1;
 }
 
 int send_server_exit(client_state_t *st)
@@ -125,6 +171,23 @@ int send_server_exit(client_state_t *st)
 	
 	status = write_server(st->sv_fifo, &req, sizeof(struct sv_exit_req), req_type);
 	
+	if (status != 0)
+	{
+		return ERROR_SV_SEND;
+	}
+
+	return 0;
+}
+
+int send_server_create(client_state_t *st, char *name)
+{
+	int status, req_type = SV_CREATE_REQ;
+	struct sv_create_req req;
+	req.pid = st->pid;
+	strcpy(req.name, name);
+
+	status = write_server(st->sv_fifo, &req, sizeof(struct sv_create_req), req_type);
+
 	if (status != 0)
 	{
 		return ERROR_SV_SEND;
