@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
 
 		if (status != 0)
 		{
-			printf("Error en login. Codigo de error: %d\n", status);
+			printf("Error init_client. Codigo de error: %d\n", status);
 		}
 
 		if (status == ERROR_SERVER_CONNECTION)

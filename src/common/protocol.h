@@ -9,9 +9,17 @@
 #define SERVER_SEMAPHORE "sv_semaphore"
 #define CLIENT_FIFO_IN_PREFIX "cl_fifo"
 #define CLIENT_FIFO_MAX_NAME 30
-#define CHT_MQ_PREFIX "mq_"
+#define CHT_MQ_PREFIX "/mq"
 #define CHT_MAX_NAME_LEN 20
 #define CHT_MAX_MQ_NAME 10
+
+#define CHT_MSG_SIZE 60
+#define CHT_MSG_Q_COUNT 10
+
+#define CHT_MSG_TEXT 0
+#define CHT_MSG_HIST 1
+#define CHT_MSG_EXIT 2
+#define CHT_MSG_JOIN 3
 
 /* CLIENT/CHAT -> SERVER requests */
 
@@ -63,6 +71,9 @@ struct sv_create_join_res {
 char *gen_client_fifo_str(pid_t pid);
 char *gen_mq_name_str(pid_t pid);
 int write_server(int fd, void *req_struct, size_t req_size, int req_type);
+
+char *pack_msg(char *msg_buf, pid_t pid, char code);
+char *unpack_msg(char *msg_buf, pid_t *pid, char *code);
 
 #endif
 /* PROTOCOL_H */

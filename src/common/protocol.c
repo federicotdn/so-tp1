@@ -69,5 +69,23 @@ int write_server(int fd, void *req_struct, size_t req_size, int req_type)
     
     return 0;
 }
+
+char *pack_msg(char *msg_buf, pid_t pid, char code)
+{
+    char *ptr = msg_buf;
+    memcpy(ptr, &pid, sizeof(pid_t));
+    ptr += sizeof(pid_t);
+    *ptr++ = code;
+    return ptr;
+}
+
+char *unpack_msg(char *msg_buf, pid_t *pid, char *code)
+{
+    char *ptr = msg_buf;
+    memcpy(pid, ptr, sizeof(pid_t));
+    ptr += sizeof(pid_t);
+    *code = *ptr++;
+    return ptr;
+}
     
     

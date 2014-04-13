@@ -259,7 +259,7 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 			{
 	        	exit(1);
 			}
-			status = init_chatroom(file_des[0], name, creator);
+			status = init_chatroom_local(file_des[0], name, creator);
 
 			exit(status);
 

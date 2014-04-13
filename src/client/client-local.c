@@ -17,7 +17,7 @@
 #define FALSE 0
 #define CHT_PS1 "-->: "
 
-enum usr_commands { USR_EXIT, USR_JOIN, USR_CREATE };
+enum usr_commands { USR_EXIT, USR_JOIN, USR_CREATE, USR_CLEAR };
 
 struct client_state {
 	int sv_fifo;
@@ -129,6 +129,10 @@ int init_client_local(char *username, char *password)
 	unlink(fifo_str);
 	free(fifo_str);
 
+	wprintw(state.display, "Presionar ENTER para salir.");
+	wrefresh(state.display);
+	wgetch(state.input);
+
 	endwin();
 	return status;
 
@@ -200,6 +204,12 @@ int start_client(client_state_t *st)
 					wrefresh(st->display);
 
 					status = enter_chat_mode(st, mq_name);
+					if (status == -1)
+					{
+						wprintw(st->display, "Error al entrar modo chat.\n");
+						wrefresh(st->display);
+						quit = TRUE;
+					}
 
 				}
 				else
@@ -211,6 +221,11 @@ int start_client(client_state_t *st)
 
 
 			break;
+
+			case USR_CLEAR:
+				wclear(st->display);
+				wrefresh(st->display);
+			break;
 		}
 	}
 
@@ -219,7 +234,30 @@ int start_client(client_state_t *st)
 
 int enter_chat_mode(client_state_t *st, char *mq_name)
 {
+	char msg_buf[CHT_MSG_SIZE];
+	char *content;
 
+	struct mq_attr attr;
+	attr.mq_maxmsg = CHT_MSG_Q_COUNT;
+	attr.mq_msgsize = CHT_MSG_SIZE;
+	mqd_t mq_out = mq_open(mq_name, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IWGRP, &attr);
+
+	if (mq_out == -1)
+	{
+		wprintw(st->display, "Error al abrir chat MQ.\n");
+		wrefresh(st->display);
+		return -1;
+	}
+
+	wprintw(st->display, "Chatroom MQ abierto.\n", mq_name);
+	wrefresh(st->display);
+
+	content = pack_msg(msg_buf, st->pid, CHT_MSG_JOIN);
+	strcpy(content, st->username);
+
+	mq_send(mq_out, msg_buf, CHT_MSG_SIZE, 0);
+
+	return 0;
 }
 
 int read_create_join_res(client_state_t *st, char *buf)
@@ -321,9 +359,6 @@ int get_usr_command(client_state_t *st, char *cht_name)
 
 		read_input_ncurses(st->input, buf, CHT_MAX_NAME_LEN + 8);
 
-		wprintw(st->display, "debug: comando: %s.\n", buf);
-		wrefresh(st->display);
-
 		if (strcmp(buf, "/exit") == 0)
 		{
 			return USR_EXIT;
@@ -341,6 +376,11 @@ int get_usr_command(client_state_t *st, char *cht_name)
 			return USR_CREATE;
 		}
 
+		if (strcmp(buf, "/clear") == 0)
+		{
+			return USR_CLEAR;
+		}
+
 		wprintw(st->display, "Comando invalido.\n");
 		wrefresh(st->display);
 	}
@@ -351,7 +391,7 @@ int read_input_ncurses(WINDOW *input, char *buf, size_t max_length)
 	wclear(input);
 	wprintw(input, "%s", CHT_PS1);
 	wrefresh(input);
-	wgetnstr(input, buf, max_length);
+	return wgetnstr(input, buf, max_length);
 }
 
 int read_input(char * buff, size_t min_length, size_t max_length)
