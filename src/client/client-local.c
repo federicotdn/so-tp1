@@ -181,6 +181,35 @@ int start_client(client_state_t *st)
 			break;
 
 			case USR_JOIN:
+				wprintw(st->display, "Uniendose a chatroom: %s\n", cht_name);
+				wrefresh(st->display);
+
+				status = send_server_join(st, cht_name);
+				if (status != 0)
+				{
+					wprintw(st->display, "Error al unirse a chatroom.\n");
+					wrefresh(st->display);
+				}
+
+				status = read_create_join_res(st, mq_name);
+				if (status == 0)
+				{
+					wprintw(st->display, "--> mq_name: %s.\n", cht_name, mq_name);
+					wrefresh(st->display);			
+
+					status = enter_chat_mode(st, mq_name);
+					if (status != 0)
+					{
+						wprintw(st->display, "Error al entrar modo chat.\n");
+						wrefresh(st->display);
+						quit = TRUE;
+					}
+				}
+				else
+				{
+					wprintw(st->display, "Error al unirse al chatroom.\n");
+					wrefresh(st->display);				
+				}
 
 			break;
 
@@ -204,7 +233,7 @@ int start_client(client_state_t *st)
 					wrefresh(st->display);
 
 					status = enter_chat_mode(st, mq_name);
-					if (status == -1)
+					if (status != 0)
 					{
 						wprintw(st->display, "Error al entrar modo chat.\n");
 						wrefresh(st->display);
@@ -216,7 +245,6 @@ int start_client(client_state_t *st)
 				{
 					wprintw(st->display, "Error al intentar crear chatroom.\n");
 					wrefresh(st->display);
-					quit = TRUE;
 				}
 
 

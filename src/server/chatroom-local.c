@@ -100,7 +100,7 @@ int start_chatroom(chatroom_state_t *st)
 		switch (code)
 		{
 			case CHT_MSG_JOIN:
-				printf("Chatroom %d: user %s joined.\n", st->pid, content);
+				printf("Chatroom %d: usuario %s se unio.\n", st->pid, content);
 			break;
 
 			case CHT_MSG_TEXT:

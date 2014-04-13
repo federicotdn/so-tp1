@@ -39,14 +39,15 @@ typedef struct server_state {
 } server_state_t;
 
 client_t *get_client(client_t *head, pid_t pid);
-int send_create_response(server_state_t *svstate, client_t *client, int code, int cht_pid);
-int chatroom_exists(chatroom_t *head, char *name);
+int send_create_join_response(server_state_t *svstate, client_t *client, int code, int cht_pid);
+chatroom_t *chatroom_exists(chatroom_t *head, char *name);
 int fork_chat(server_state_t *svstate, char *name, pid_t creator);
 void free_sv_users(client_t *head);
 void free_sv_chats(chatroom_t *head);
 void exit_cleanup(int sig);
 int start_server(server_state_t *svstate);
 int login_user(server_state_t *svstate);
+int join_user(server_state_t *svstate);
 int exit_user(server_state_t *svstate);
 int create_chatroom(server_state_t *svstate);
 void remove_user(server_state_t *svstate, pid_t pid);
@@ -133,6 +134,13 @@ int start_server(server_state_t *svstate)
 			
 			case SV_JOIN_REQ:
 			
+				status = join_user(svstate);
+				if (status == -1)
+				{
+					error = TRUE;
+				}
+
+
 			break;
 			
 			case SV_CREATE_REQ:
@@ -160,6 +168,7 @@ int start_server(server_state_t *svstate)
 			break;
 			
 			default:
+				printf("Server: codigo invalido recibido.");
 				error = TRUE;
 			break;
 		}
@@ -194,7 +203,7 @@ int create_chatroom(server_state_t *svstate)
 		status = SV_CREATE_ERROR_PRIV;
 	}
 
-	if (chatroom_exists(svstate->chat_head, req.name))
+	if (chatroom_exists(svstate->chat_head, req.name) != NULL)
 	{
 		status = SV_CREATE_ERROR_NAME;
 	}
@@ -209,7 +218,7 @@ int create_chatroom(server_state_t *svstate)
 		return -1;
 	}
 	
-	send_create_response(svstate, client, status, cht_pid);
+	send_create_join_response(svstate, client, status, cht_pid);
 
 	return 0;
 
@@ -280,12 +289,12 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 	return fork_pid;
 }
 
-int send_create_response(server_state_t *svstate, client_t *client, int code, int cht_pid)
+int send_create_join_response(server_state_t *svstate, client_t *client, int code, int cht_pid)
 {
     struct sv_create_join_res res;
     res.status = code;
     
-    if (code != SV_CREATE_SUCCESS)
+    if (code != SV_CREATE_SUCCESS && code != SV_JOIN_SUCCESS)
     {
         res.mq_name[0] = 0;
     }
@@ -352,6 +361,41 @@ int setup_fifo()
 	}
 	
 	return svfifo;
+}
+
+int join_user(server_state_t *svstate)
+{
+	struct sv_join_req req;
+	int status;
+	int code = SV_JOIN_REQ;
+	chatroom_t *cht;
+
+	status = read(svstate->fifo_in, &req, sizeof(struct sv_join_req));
+	if (status != sizeof(struct sv_join_req))
+	{
+		return -1;
+	}
+
+	client_t *client = get_client(svstate->list_head, req.pid);
+
+	if (client == NULL)
+	{
+		return -1;
+	}
+
+	printf("Server: join usuario PID: %u\n", req.pid);
+
+	cht = chatroom_exists(svstate->chat_head, req.name);
+	code = SV_JOIN_SUCCESS;
+
+	if (cht == NULL)
+	{
+		code = SV_JOIN_ERROR_NAME;
+	}
+
+	send_create_join_response(svstate, client, code, cht->pid);
+
+	return 0;
 }
 
 int login_user(server_state_t *sv_state)
@@ -574,19 +618,19 @@ client_t *get_client(client_t *head, pid_t pid)
 	return NULL;
 }
 
-int chatroom_exists(chatroom_t *head, char *name)
+chatroom_t *chatroom_exists(chatroom_t *head, char *name)
 {
 
 	while (head != NULL)
 	{
 		if (strcmp(head->name, name) == 0)
 		{
-			return TRUE;
+			return head;
 		}
 		head = head->next;
 	}
 
-	return FALSE;
+	return NULL;
 }
 
 void exit_cleanup(int sig)
@@ -601,7 +645,7 @@ void exit_cleanup(int sig)
 		printf("\nServer: SIGINT recibido. Exit.\n");
 		close_db(gbl_state->db);
 		free_sv_users(gbl_state->list_head);
-		free_sv_chats(gbl_state->chat_head);
+		//free_sv_chats(gbl_state->chat_head);
 		close(gbl_state->fifo_in);
 		unlink(SERVER_FIFO_IN);
 		sem_unlink(SERVER_SEMAPHORE);
