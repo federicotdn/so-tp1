@@ -13,8 +13,6 @@
 #define CHT_MAX_NAME_LEN 20
 #define CHT_MAX_MQ_NAME 10
 
-
-
 /* CLIENT/CHAT -> SERVER requests */
 
 enum SV_REQ_CODES { SV_LOGIN_REQ = 0, SV_JOIN_REQ, SV_CREATE_REQ, SV_EXIT_REQ, SV_DESTROY_REQ };
@@ -27,6 +25,7 @@ struct sv_login_req {
 
 struct sv_join_req {
 	pid_t pid;
+	char name[CHT_MAX_NAME_LEN + 1];
 };
 
 struct sv_create_req {

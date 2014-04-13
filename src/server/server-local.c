@@ -39,7 +39,7 @@ typedef struct server_state {
 } server_state_t;
 
 client_t *get_client(client_t *head, pid_t pid);
-int send_create_response(server_state_t *svstate, client_t *client, int code);	
+int send_create_response(server_state_t *svstate, client_t *client, int code, int cht_pid);
 int chatroom_exists(chatroom_t *head, char *name);
 int fork_chat(server_state_t *svstate, char *name, pid_t creator);
 void free_sv_users(client_t *head);
@@ -173,6 +173,7 @@ int create_chatroom(server_state_t *svstate)
 {
 	struct sv_create_req req;
 	int status = read(svstate->fifo_in, &req, sizeof(struct sv_create_req));
+	int cht_pid;
 
 	if (status != sizeof(struct sv_create_req))
 	{
@@ -200,10 +201,15 @@ int create_chatroom(server_state_t *svstate)
 
 	if (status == SV_CREATE_SUCCESS)
 	{
-		fork_chat(svstate, req.name, client->pid);
+		cht_pid = fork_chat(svstate, req.name, client->pid);
+	}
+
+	if (cht_pid == -1)
+	{
+		return -1;
 	}
 	
-	send_create_response(svstate, client, status);
+	send_create_response(svstate, client, status, cht_pid);
 
 	return 0;
 
@@ -265,30 +271,33 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 			{
         		return -1;
 			}
+			printf("Server: Chatroom creado, pid: %d\n", fork_pid);
 			chatroom->pid = fork_pid;
 
 		break;
 	}
 
-	return 0;
+	return fork_pid;
 }
 
-int send_create_response(server_state_t *svstate, client_t *client, int code)
+int send_create_response(server_state_t *svstate, client_t *client, int code, int cht_pid)
 {
     struct sv_create_join_res res;
     res.status = code;
     
-    if (code == SV_CREATE_SUCCESS)
+    if (code != SV_CREATE_SUCCESS)
     {
         res.mq_name[0] = 0;
     }
     else
     {
-       char *mq_name = gen_mq_name_str(client->pid);
+       char *mq_name = gen_mq_name_str(cht_pid);
        if (mq_name == NULL)
        {
            return -1;
        }
+
+       printf("--> mq_name: %s\n", mq_name);
        
        strcpy(res.mq_name, mq_name);
        free(mq_name);

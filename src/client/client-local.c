@@ -5,100 +5,47 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include "client-local.h"
-#include "protocol.h"
-
+#include <mqueue.h>
 #include <ncurses.h>
 #include <pthread.h>
 
+#include "client-local.h"
+#include "protocol.h"
+#include "dbaccess.h"
+
 #define TRUE 1
 #define FALSE 0
+#define CHT_PS1 "-->: "
 
-WINDOW *receive;
-WINDOW *text;
+enum usr_commands { USR_EXIT, USR_JOIN, USR_CREATE };
 
-void putch(WINDOW *win, char ch)
-{
-     // Add the character ch to the specified "window".  The
-     // WINDOW is one of the two ncurses windows, me and them,
-     // that are used in this program.
-	if (ch == 4 || ch == 7) // Translate left-arrow, backspace to CTL-H
-    {
-    	ch = '\b';
-    }
+struct client_state {
+	int sv_fifo;
+	int in_fifo;
+	char *username;
+	enum db_type_code type;
+	pid_t pid;
+	mqd_t mq_in;
 
-  	if (ch < ' ' && ch != '\t' && ch != '\n' && ch != '\b') 
-  	{
-        // \t, \n, and \b are the only control characters that
-        // are interpreted by wechochar().  Others should be ignored.
-    	return;
-	}
+	/* ncurses */
+	WINDOW *display;
+	WINDOW *input;
 
-	wechochar(win,ch);
-	if (ch == '\b')
-	{
-      	// \b only moves the cursor -- I also want to erase the character.
-    	wdelch(win);
-    	refresh();
-	}
-}
+	/* receive window pthread */
+	pthread_t rec_thread;
+};
 
-
-void putchars(WINDOW *win, const char *str) 
-{
-     // Put all the chars in str into the specified WINDOW.
-	while (*str) 
-	{
-    	putch(win, *str);
-    	str++;
-	}
-}
-
-void *receive_thread(void *arg)
-{
-    while (1) 
-    {
-    	sleep(1);
-    	putchars(receive, "mensaje\n");
-    }
-}
-
-void enter_chat_mode()
-{
-	/* ncurses tests */
-
-	initscr();
-	cbreak();
-	noecho();
-	intrflush(stdscr, FALSE);
-
-	receive = newwin(10, COLS, 0, 0);
-	text = newwin(10, COLS, 11, 0);
-
-	idlok(text, TRUE);
-  	scrollok(text, TRUE);
-  	keypad(text, TRUE);
-  	idlok(receive, TRUE);
-  	scrollok(receive, TRUE);
-
-  	refresh();
-
-  	pthread_t rec_thread;
-  	pthread_create(&rec_thread, NULL, receive_thread, NULL);
-
-  	char ch;
-
-  	while (1) 
-  	{
-         ch = wgetch(text);  // Get character typed by user.
-         if (ch == '.')
-            break;
-         putch(text, ch);
-    }
-
-    endwin();
-}
-
+int start_client(client_state_t *st);
+int enter_chat_mode(client_state_t *st, char *mq_name);
+enum db_type_code read_server_login(int fifo, int *status);
+int send_server_login(client_state_t *st, char *password);
+int send_server_exit(client_state_t *st);
+int send_server_create(client_state_t *st, char *name);
+int send_server_join(client_state_t *st, char *name);
+int read_create_join_res(client_state_t *st, char *buf);
+int get_usr_command(client_state_t *st, char *cht_name);
+int init_ncurses(client_state_t *st);
+int read_input_ncurses(WINDOW *input, char *buf, size_t max_length);
 
 int init_client_local(char *username, char *password)
 {
@@ -106,6 +53,11 @@ int init_client_local(char *username, char *password)
 	state.pid = getpid();
 	state.username = username;
 	int status;
+
+	if (init_ncurses(&state) != 0)
+	{
+		return ERROR_OTHER;
+	}
 
 	char *fifo_str = gen_client_fifo_str(state.pid);
 	if (fifo_str == NULL)
@@ -120,7 +72,8 @@ int init_client_local(char *username, char *password)
 		return ERROR_FIFO_CREAT;
 	}
 
-	printf("Abriendo FIFO(out) servidor: %s\n", SERVER_FIFO_IN);
+	wprintw(state.display, "Abriendo FIFO(out) servidor: %s\n", SERVER_FIFO_IN);
+	wrefresh(state.display);
 
 	state.sv_fifo = open(SERVER_FIFO_IN, O_WRONLY);
 	if (state.sv_fifo == -1)
@@ -136,7 +89,8 @@ int init_client_local(char *username, char *password)
 		return ERROR_SV_SEND;
 	}
 
-	printf("Abriendo FIFO(in) cliente: %s\n", fifo_str);
+	wprintw(state.display, "Abriendo FIFO(in) cliente: %s\n", fifo_str);
+	wrefresh(state.display);
 
 	state.in_fifo = open(fifo_str, O_RDONLY);
 	if (state.in_fifo == -1)
@@ -165,7 +119,9 @@ int init_client_local(char *username, char *password)
 		}
 	}
 
-	printf("Login completado.  Tipo de usuario: %d\n", code);
+	wprintw(state.display, "Login completado.  Tipo de usuario: %d\n", code);
+	wrefresh(state.display);
+
 	status = start_client(&state);
 
 	close(state.sv_fifo);
@@ -173,49 +129,86 @@ int init_client_local(char *username, char *password)
 	unlink(fifo_str);
 	free(fifo_str);
 
+	endwin();
 	return status;
 
+}
+
+int init_ncurses(client_state_t *st)
+{
+	initscr();
+	cbreak();
+	intrflush(stdscr, FALSE);
+
+	st->display = newwin(LINES - 1, COLS, 0, 0);
+	st->input = newwin(1, COLS, LINES - 1, 0);
+
+	if (st->display == NULL || st->input == NULL)
+	{
+		return -1;
+	}
+
+	idlok(st->input, TRUE);
+  	scrollok(st->input, TRUE);
+  	keypad(st->input, TRUE);
+  	idlok(st->display, TRUE);
+  	scrollok(st->display, TRUE);
+
+  	refresh();
+  	return 0;
 }
 
 int start_client(client_state_t *st)
 {
 	char cht_name[CHT_MAX_NAME_LEN + 1];
+	char mq_name[CHT_MAX_MQ_NAME + 1];
 	int cmd, status = 0, quit = FALSE;
 
 	while (!quit)
 	{
-		cmd = get_usr_command(cht_name);
+		cmd = get_usr_command(st, cht_name);
 		switch (cmd)
 		{
 			case USR_EXIT:
-				printf("Cerrando sesion en servidor.\n");
+				wprintw(st->display, "Cerrando sesion en servidor.\n");
+				wrefresh(st->display);
 				status = send_server_exit(st);
 				quit = TRUE;
 			break;
 
 			case USR_JOIN:
-				enter_chat_mode();
-				quit = TRUE;
+
 			break;
 
 			case USR_CREATE:
 
-				if (st->type != DB_TEACHER)
+				wprintw(st->display, "Creando chatroom '%s'\n", cht_name);
+				wrefresh(st->display);
+				status = send_server_create(st, cht_name);
+				if (status != 0)
 				{
-					printf("Solo los profesores pueden crear chatrooms.\n");
+					wprintw(st->display, "Client: error al enviar sv_create_req.\n");
+					wrefresh(st->display);
+					quit = TRUE;
+					break;
+				}
+
+				status = read_create_join_res(st, mq_name);
+				if (status == 0)
+				{
+					wprintw(st->display, "Chatroom creado.  Uniendo... (mq_name: %s)\n", mq_name);
+					wrefresh(st->display);
+
+					status = enter_chat_mode(st, mq_name);
+
 				}
 				else
 				{
-					printf("Creando chatroom '%s'\n", cht_name);
-					status = send_server_create(st, cht_name);
-					if (status != 0)
-					{
-						printf("Client: error al enviar sv_create_req.\n");
-						quit = TRUE;
-					}
-
-					status = read_create_join_res(st);
+					wprintw(st->display, "Error al intentar crear chatroom.\n");
+					wrefresh(st->display);
+					quit = TRUE;
 				}
+
 
 			break;
 		}
@@ -224,7 +217,12 @@ int start_client(client_state_t *st)
 	return status;
 }
 
-int read_create_join_res(client_state_t *st)
+int enter_chat_mode(client_state_t *st, char *mq_name)
+{
+
+}
+
+int read_create_join_res(client_state_t *st, char *buf)
 {
 	struct sv_create_join_res res;
 	int res_type = -1, status;
@@ -232,14 +230,16 @@ int read_create_join_res(client_state_t *st)
 	status = read(st->in_fifo, &res_type, sizeof(int));
 	if (status != sizeof(int) || res_type != SV_CREATE_JOIN_RES)
 	{
-		printf("Client: respuesta no es join/create.\n");
+		wprintw(st->display, "Client: respuesta no es join/create.\n");
+		wrefresh(st->display);
 		return -1;
 	}
 
 	status = read(st->in_fifo, &res, sizeof(struct sv_create_join_res));
 	if (status != sizeof(struct sv_create_join_res))
 	{
-		printf("Client: error al leer sv_create_join_res.\n");
+		wprintw(st->display, "Client: error al leer sv_create_join_res.\n");
+		wrefresh(st->display);
 		return -1;
 	}
 
@@ -247,6 +247,7 @@ int read_create_join_res(client_state_t *st)
 
 	if (res.status == SV_CREATE_SUCCESS || res.status == SV_JOIN_SUCCESS)
 	{
+		strcpy(buf, res.mq_name);
 		return 0;
 	}
 	
@@ -286,15 +287,42 @@ int send_server_create(client_state_t *st, char *name)
 	return 0;
 }
 
-int get_usr_command(char *cht_name)
+int send_server_join(client_state_t *st, char *name)
+{
+	int status, req_type = SV_JOIN_REQ;
+	struct sv_join_req req;
+	req.pid = st->pid;
+	strcpy(req.name, name);
+
+	status = write_server(st->sv_fifo, &req, sizeof(struct sv_join_req), req_type);
+
+	if (status != 0)
+	{
+		return ERROR_SV_SEND;
+	}
+
+	return 0;
+}
+
+int get_usr_command(client_state_t *st, char *cht_name)
 {
 	char buf[CHT_MAX_NAME_LEN + 9];
+	int len = sizeof(buf) / sizeof(char);
 
-	printf("Comandos:\n   /exit\n   /join [nombre]\n   /create [nombre]\n");
+	wprintw(st->display, "Comandos:\n   /exit\n   /join [nombre]\n   /create [nombre]\n");
+	wrefresh(st->display);
 	while (TRUE)
 	{
-		printf("Ingrese un comando:\n--> ");
-		read_input(buf, 5, CHT_MAX_NAME_LEN + 8);
+		int i;
+		for (i = 0; i < len; i++)
+		{
+			buf[i] = 0;
+		}
+
+		read_input_ncurses(st->input, buf, CHT_MAX_NAME_LEN + 8);
+
+		wprintw(st->display, "debug: comando: %s.\n", buf);
+		wrefresh(st->display);
 
 		if (strcmp(buf, "/exit") == 0)
 		{
@@ -313,8 +341,17 @@ int get_usr_command(char *cht_name)
 			return USR_CREATE;
 		}
 
-		printf("Comando invalido.\n");
+		wprintw(st->display, "Comando invalido.\n");
+		wrefresh(st->display);
 	}
+}
+
+int read_input_ncurses(WINDOW *input, char *buf, size_t max_length)
+{
+	wclear(input);
+	wprintw(input, "%s", CHT_PS1);
+	wrefresh(input);
+	wgetnstr(input, buf, max_length);
 }
 
 int read_input(char * buff, size_t min_length, size_t max_length)
