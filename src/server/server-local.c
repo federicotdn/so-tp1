@@ -575,8 +575,6 @@ void remove_user(server_state_t *svstate, pid_t pid)
 
 		aux = aux->next;
 	}
-
-
 }
 
 void free_sv_users(client_t *head)

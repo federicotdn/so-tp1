@@ -346,9 +346,12 @@ int enter_chat_mode(client_state_t *st, char *mq_name)
 		return -1;
 	}
 
-	status =  enter_chat_loop(st, mq_out);
+	status = enter_chat_loop(st, mq_out);
 
-	return 0;
+	wclear(st->display);
+	wrefresh(st->display);	
+
+	return status;
 }
 
 
@@ -358,15 +361,17 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 	char text[CHT_TEXT_SIZE + 1];
 	char msg_buf[CHT_MSG_SIZE];
 	char *content;
-	int status;
+	int status, has_exited = FALSE;
 
 	st->thread_ended = FALSE;
-	
 
 	wclear(st->display);
 	wprintw(st->display, "Conectado al chatroom %s.\n", st->chat_name);
+	wprintw(st->display, "Comandos validos:.\n");
+	wprintw(st->display, "   /history   /exit\n");
 	wrefresh(st->display);
 
+	/* Thread para recibir mensajes de MQ */
 	pthread_create(&(st->rec_thread), NULL, read_mq_loop, st);
 
 	while (!quit)
@@ -379,12 +384,42 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 		}
 		pthread_mutex_unlock(&st->thread_m);
 
+		if (has_exited)
+		{
+			continue;
+		}
+
 		fill_zeros(text, CHT_TEXT_SIZE + 1);
 		read_input_ncurses(st, text, CHT_TEXT_SIZE);
 
 		if (text[0] == '/')
 		{
+			if (strcmp(text, "/exit") == 0)
+			{
+				pack_msg(msg_buf, st->pid, CHT_MSG_EXIT);
+				status = mq_send(mq_out, msg_buf, CHT_MSG_SIZE, 0);
 
+				if (status == -1)
+				{
+					pthread_mutex_lock(&st->thread_m);
+					pthread_cancel(st->rec_thread);
+					pthread_mutex_unlock(&st->thread_m);
+					return -1;
+				}
+
+				has_exited = TRUE;
+			}
+			else if (strcmp(text, "/history") == 0)
+			{
+
+			}
+			else
+			{
+				pthread_mutex_lock(&st->screen_m);
+				wprintw(st->display, "Comando invalido.\n");
+				wrefresh(st->display);
+				pthread_mutex_unlock(&st->screen_m);
+			}
 		}
 		else
 		{
@@ -397,7 +432,9 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 			
 			if (status == -1)
 			{
+				pthread_mutex_lock(&st->thread_m);
 				pthread_cancel(st->rec_thread);
+				pthread_mutex_unlock(&st->thread_m);
 				return -1;
 			}
 
@@ -444,7 +481,15 @@ void *read_mq_loop(void *arg)
 			break;
 
 			case CHT_MSG_EXIT:
+				pthread_mutex_lock(&st->screen_m);
+				wprintw(st->display, "Saliendo de chatroom.\n");
+				wrefresh(st->display);
+				pthread_mutex_unlock(&st->screen_m);
 
+				pthread_mutex_lock(&st->thread_m);
+				st->thread_ended = TRUE;
+				pthread_mutex_unlock(&st->thread_m);
+				return NULL;
 			break;
 
 			default:

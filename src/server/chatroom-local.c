@@ -32,6 +32,7 @@ struct chatroom_state {
 
 int start_chatroom(chatroom_state_t *state);
 int add_client(pid_t sender_pid, char *content, chatroom_state_t *st );
+void remove_client(pid_t sender_pid, chatroom_state_t *st);
 int send_text_to_all(chatroom_state_t *st, char *text);
 static client_t *get_client(client_t *head, pid_t pid);
 
@@ -104,8 +105,11 @@ int start_chatroom(chatroom_state_t *st)
 
 		content = unpack_msg(msg_buf, &sender_pid, &code);
 
-		printf("Chatroom %d: msg codigo %d recibido.\n", st->pid, (int)code);
-
+		if (code != CHT_MSG_TEXT)
+		{
+			printf("Chatroom %d: msg codigo %d recibido.\n", st->pid, (int)code);
+		}
+		
 		switch (code)
 		{
 			case CHT_MSG_JOIN:
@@ -149,6 +153,24 @@ int start_chatroom(chatroom_state_t *st)
 			break;
 
 			case CHT_MSG_EXIT:
+				client = get_client(st->head, sender_pid);
+				if (client == NULL)
+				{
+					quit = TRUE;
+					break;
+				}
+
+				strcpy(new_content, client->name);
+				strcat(new_content, " salio del chatroom.");
+				send_text_to_all(st, new_content);
+
+				status = mq_send(client->mq, msg_buf, CHT_MSG_SIZE, 0);
+				remove_client(sender_pid, st);
+				if (status == -1)
+				{
+					quit = TRUE;
+					break;
+				}
 
 			break;
 
@@ -242,5 +264,44 @@ int add_client(pid_t sender_pid, char *content, chatroom_state_t *st )
 	st->head = client;
 
 	return 0;
+}
 
+void remove_client(pid_t sender_pid, chatroom_state_t *st)
+{
+	client_t *aux = st->head;
+
+	if (aux == NULL)
+	{
+		return;
+	}
+	
+	if (aux->pid == sender_pid)
+	{
+		st->head = aux->next;
+		free(aux->name);
+		mq_close(aux->mq);
+		free(aux);
+
+		printf("--> PID: %u eliminado de chatroom.\n", sender_pid);
+
+		return;
+	}
+
+	while (aux->next != NULL)
+	{
+		client_t *next = aux->next;
+		if (next->pid == sender_pid)
+		{
+			aux->next = next->next;
+			free(next->name);
+			mq_close(next->mq);
+			free(next);
+
+			printf("--> PID: %u eliminado de chatroom.\n", sender_pid);
+
+			return;
+		}
+
+		aux = aux->next;
+	}
 }
