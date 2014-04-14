@@ -23,6 +23,7 @@ struct client_state {
 	int sv_fifo;
 	int in_fifo;
 	char *username;
+	char * chat_name;
 	enum db_type_code type;
 	pid_t pid;
 	mqd_t mq_in;
@@ -235,7 +236,7 @@ int start_client(client_state_t *st)
 				{
 					wprintw(st->display, "--> mq_name: %s.\n", cht_name, mq_name);
 					wrefresh(st->display);			
-
+					st->chat_name = strdup(cht_name);
 					status = enter_chat_mode(st, mq_name);
 					if (status != 0)
 					{
@@ -270,7 +271,7 @@ int start_client(client_state_t *st)
 				{
 					wprintw(st->display, "Chatroom creado.  Uniendo... (mq_name: %s)\n", mq_name);
 					wrefresh(st->display);
-
+					st->chat_name = strdup(cht_name);
 					status = enter_chat_mode(st, mq_name);
 					if (status != 0)
 					{
@@ -364,7 +365,7 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 	
 
 	wclear(st->display);
-	wprintw(st->display, "Conectado al chatroom.\n");
+	wprintw(st->display, "Conectado al chatroom %s.\n", st->chat_name);
 	wrefresh(st->display);
 
 	pthread_create(&(st->rec_thread), NULL, read_mq_loop, st);
@@ -390,8 +391,11 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 		{
 			content = pack_msg(msg_buf,st->pid, CHT_MSG_TEXT);
 			strcpy(content, text);
-			status = mq_send(mq_out, msg_buf, CHT_MSG_SIZE, 0);
-
+			if (strlen(text) !=0)
+			{
+				status = mq_send(mq_out, msg_buf, CHT_MSG_SIZE, 0);
+			}
+			
 			if (status == -1)
 			{
 				pthread_cancel(st->rec_thread);
