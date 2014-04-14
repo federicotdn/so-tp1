@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "server-local.h"
+#include "server-remote.h"
 
 int main(int argc, char *argv[])
 {
@@ -28,7 +29,8 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		
+		printf("holaaaa\n");
+		init_server_remote();
 	}
 
 	return 0;

@@ -58,7 +58,8 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		
+		printf("hola\n");
+		start_client_remote(username, password);
 	}
 
 	return 0;
