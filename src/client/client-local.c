@@ -33,6 +33,8 @@ struct client_state {
 
 	/* receive window pthread */
 	pthread_t rec_thread;
+	pthread_mutex_t thread_m;
+	int thread_ended;
 };
 
 int start_client(client_state_t *st);
@@ -46,6 +48,11 @@ int read_create_join_res(client_state_t *st, char *buf);
 int get_usr_command(client_state_t *st, char *cht_name);
 int init_ncurses(client_state_t *st);
 int read_input_ncurses(WINDOW *input, char *buf, size_t max_length);
+int enter_chat_loop(client_state_t * st, mqd_t mq_out);
+void *read_mq_loop(void *arg);
+void fill_zeros(char *buf, int length);
+
+
 
 int init_client_local(char *username, char *password)
 {
@@ -54,20 +61,45 @@ int init_client_local(char *username, char *password)
 	state.username = username;
 	int status;
 
+	pthread_mutex_init ( &(state.thread_m), NULL);
+	
+
 	if (init_ncurses(&state) != 0)
 	{
+		return ERROR_OTHER;
+	}
+
+	char *mq_name = gen_mq_name_str(state.pid);
+
+	if (mq_name == NULL)
+	{
+		return ERROR_OTHER;
+	}
+
+	struct mq_attr attr;
+	attr.mq_maxmsg = CHT_MSG_Q_COUNT;
+	attr.mq_msgsize = CHT_MSG_SIZE;
+
+	state.mq_in = mq_open(mq_name, O_CREAT | O_RDONLY, S_IRUSR | S_IWUSR | S_IWGRP, &attr);
+
+
+	if (state.mq_in == -1)
+	{
+		free(mq_name);
 		return ERROR_OTHER;
 	}
 
 	char *fifo_str = gen_client_fifo_str(state.pid);
 	if (fifo_str == NULL)
 	{
+		free(mq_name);
 		return ERROR_OTHER;
 	}
 	
 	unlink(fifo_str);
 	if (mkfifo(fifo_str, S_IRUSR | S_IWUSR | S_IWGRP) == -1)
 	{
+		free(mq_name);
 		free(fifo_str);
 		return ERROR_FIFO_CREAT;
 	}
@@ -78,6 +110,7 @@ int init_client_local(char *username, char *password)
 	state.sv_fifo = open(SERVER_FIFO_IN, O_WRONLY);
 	if (state.sv_fifo == -1)
 	{
+		free(mq_name);
 		free(fifo_str);
 		return ERROR_SERVER_CONNECTION;
 	}
@@ -85,6 +118,7 @@ int init_client_local(char *username, char *password)
 	status = send_server_login(&state, password);
 	if (status == ERROR_SV_SEND)
 	{
+		free(mq_name);
 		free(fifo_str);
 		return ERROR_SV_SEND;
 	}
@@ -95,6 +129,7 @@ int init_client_local(char *username, char *password)
 	state.in_fifo = open(fifo_str, O_RDONLY);
 	if (state.in_fifo == -1)
 	{
+		free(mq_name);
 		free(fifo_str);
 		return ERROR_FIFO_OPEN;
 	}
@@ -102,12 +137,14 @@ int init_client_local(char *username, char *password)
 	enum db_type_code code = read_server_login(state.in_fifo, &status);
 	if (status == -1)
 	{
+		free(mq_name);
 		free(fifo_str);
 		return ERROR_SV_READ;
 	}
 
 	if (status != SV_LOGIN_SUCCESS)
 	{
+		free(mq_name);
 		free(fifo_str);
 		if (status == SV_LOGIN_ERROR_CRD)
 		{
@@ -127,6 +164,8 @@ int init_client_local(char *username, char *password)
 	close(state.sv_fifo);
 	close(state.in_fifo);
 	unlink(fifo_str);
+	mq_unlink(mq_name);
+	free(mq_name);
 	free(fifo_str);
 
 	wprintw(state.display, "Presionar ENTER para salir.");
@@ -264,6 +303,9 @@ int enter_chat_mode(client_state_t *st, char *mq_name)
 {
 	char msg_buf[CHT_MSG_SIZE];
 	char *content;
+	int status;
+	pid_t pid;
+	char code;
 
 	struct mq_attr attr;
 	attr.mq_maxmsg = CHT_MSG_Q_COUNT;
@@ -283,9 +325,131 @@ int enter_chat_mode(client_state_t *st, char *mq_name)
 	content = pack_msg(msg_buf, st->pid, CHT_MSG_JOIN);
 	strcpy(content, st->username);
 
-	mq_send(mq_out, msg_buf, CHT_MSG_SIZE, 0);
+	status = mq_send(mq_out, msg_buf, CHT_MSG_SIZE, 0);
+
+	if (status == -1)
+	{
+		return -1;
+	}
+
+	status = mq_receive(st->mq_in, msg_buf, CHT_MSG_SIZE, NULL);
+
+	if (status == -1)
+	{
+		return -1;
+	}
+
+	content  = unpack_msg(msg_buf, &pid, &code);
+
+	if (code != CHT_MSG_JOIN)
+	{
+		return -1;
+	}
+
+	status =  enter_chat_loop(st, mq_out);
 
 	return 0;
+}
+
+
+int enter_chat_loop(client_state_t * st, mqd_t mq_out)
+{
+	int quit = FALSE;
+	char text[CHT_TEXT_SIZE + 1];
+	char msg_buf[CHT_MSG_SIZE];
+	char *content;
+	int status;
+
+	st->thread_ended = FALSE;
+	
+
+	wclear(st->display);
+	wprintw(st->display, "Conectado al chatroom.\n");
+	wrefresh(st->display);
+
+	pthread_create(&(st->rec_thread), NULL, read_mq_loop, st);
+
+	while (!quit)
+	{
+		pthread_mutex_lock(&st->thread_m);
+		if (st->thread_ended)
+		{
+			pthread_mutex_unlock(&st->thread_m);
+			break;
+		}
+		pthread_mutex_unlock(&st->thread_m);
+
+		fill_zeros(text, CHT_TEXT_SIZE + 1);
+		read_input_ncurses(st->input, text, CHT_TEXT_SIZE);
+
+		if (text[0] == '/')
+		{
+
+		}
+		else
+		{
+			content = pack_msg(msg_buf,st->pid, CHT_MSG_TEXT);
+			strcpy(content, text);
+			status = mq_send(mq_out, msg_buf, CHT_MSG_SIZE, 0);
+
+			if (status == -1)
+			{
+				pthread_cancel(st->rec_thread);
+				return -1;
+			}
+
+		}
+	}
+
+	return 0;
+}
+
+void * read_mq_loop(void *arg)
+{
+	char msg_buf[CHT_MSG_SIZE];
+	char *content;
+	int quit = FALSE;
+	int status;
+	pid_t pid;
+	char code;
+	client_state_t *st = (client_state_t*) arg;
+	
+
+	while (!quit)
+	{
+		status = mq_receive(st->mq_in, msg_buf, CHT_MSG_SIZE, NULL);
+
+		if (status == -1)
+		{
+			pthread_mutex_lock(&st->thread_m);
+			st->thread_ended = TRUE;
+			pthread_mutex_unlock(&st->thread_m);
+			return NULL;
+		}
+		content = unpack_msg(msg_buf, &pid, &code);
+
+		switch (code)
+		{
+			case CHT_MSG_TEXT:
+				wprintw(st->display, "%s\n", content);
+				wrefresh(st->display);
+			break;
+
+			case CHT_MSG_HIST:
+
+			break;
+
+			case CHT_MSG_EXIT:
+
+			break;
+
+			default:
+
+			break;
+		}
+	}	
+
+	return NULL;
 }
 
 int read_create_join_res(client_state_t *st, char *buf)
@@ -495,6 +659,12 @@ int send_server_login(client_state_t *st, char *password)
 	return 0;
 }
 
-
-
+void fill_zeros(char *buf, int length)
+{
+	int i;
+	for (i =0; i< length; i++)
+	{
+		buf[i] = 0;
+	}
+}
 

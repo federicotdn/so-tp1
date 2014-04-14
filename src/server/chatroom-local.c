@@ -16,6 +16,7 @@ typedef struct client {
 	char *name;
 	pid_t pid;
 	struct client *next;
+	mqd_t mq;
 } client_t;
 
 struct chatroom_state {
@@ -30,6 +31,11 @@ struct chatroom_state {
 };
 
 int start_chatroom(chatroom_state_t *state);
+int add_client(pid_t sender_pid, char *content, chatroom_state_t *st );
+int send_text_to_all(chatroom_state_t *st, char *text);
+static client_t *get_client(client_t *head, pid_t pid);
+
+
 
 int init_chatroom_local(int in_pipe, char *name, pid_t creator)
 {
@@ -79,6 +85,9 @@ int start_chatroom(chatroom_state_t *st)
 	char *content;
 	int quit = FALSE;
 	ssize_t status;
+	char new_content[CHT_MSG_SIZE + 1];
+	client_t *client;
+
 
 	while (!quit)
 	{
@@ -101,9 +110,37 @@ int start_chatroom(chatroom_state_t *st)
 		{
 			case CHT_MSG_JOIN:
 				printf("Chatroom %d: usuario %s se unio.\n", st->pid, content);
+				status =  add_client(sender_pid, content, st);
+				if (status == -1)
+				{
+					quit = TRUE;;
+					break;
+				}
+				status = mq_send((st->head)->mq, msg_buf ,CHT_MSG_SIZE, 0);
+				if (status == -1)
+				{
+					quit = TRUE;;
+					break;
+				}
+
+
 			break;
 
 			case CHT_MSG_TEXT:
+				client = get_client(st->head, sender_pid);
+				if (client == NULL)
+				{
+					quit = TRUE;
+					break;
+				}
+
+				strcpy(new_content, client->name);
+				strcat(new_content, ": ");
+				strcat(new_content, content);
+
+				send_text_to_all(st, new_content);
+
+
 
 			break;
 
@@ -124,3 +161,86 @@ int start_chatroom(chatroom_state_t *st)
 
 	return 0;
 }	
+
+int send_text_to_all(chatroom_state_t *st, char *text)
+{
+	client_t *aux = st->head;
+	char msg_buf[CHT_MSG_SIZE];
+	char *content;
+	int status;
+
+	content = pack_msg(msg_buf, 0, CHT_MSG_TEXT);
+	strcpy(content, text);
+
+	while (aux != NULL)
+	{
+		status = mq_send(aux->mq, msg_buf, CHT_MSG_SIZE, 0);
+		if (status == -1)
+		{
+			return -1;
+		}
+		aux = aux->next;
+	}
+
+	return 0;
+}
+
+static client_t *get_client(client_t *head, pid_t pid)
+{
+	while(head != NULL)
+	{
+		if (head->pid == pid)
+		{
+			return head;
+		}
+		head = head->next;
+	}
+
+	return NULL;
+}
+
+int add_client(pid_t sender_pid, char *content, chatroom_state_t *st )
+{
+	client_t *client = malloc(sizeof(client_t));
+	char *mq_name;
+
+	if (client == NULL)
+	{
+		return -1;
+	}
+
+	client->name = strdup(content);
+
+	if (client->name == NULL)
+	{
+		free(client);
+		return -1;
+	}
+
+	mq_name = gen_mq_name_str(sender_pid);
+
+	if (mq_name == NULL)
+	{
+		free(client->name);
+		free(client);
+		return -1;
+	}
+
+	client->mq = mq_open(mq_name, O_WRONLY);
+	free(mq_name);
+
+	if (client->mq == -1)
+	{
+		free(client->name);
+		free(client);
+		return -1;
+	}
+
+	client->pid = sender_pid;
+
+	client->next = st->head;
+	st->head = client;
+
+	return 0;
+
+}

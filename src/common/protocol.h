@@ -13,7 +13,8 @@
 #define CHT_MAX_NAME_LEN 20
 #define CHT_MAX_MQ_NAME 10
 
-#define CHT_MSG_SIZE 60
+#define CHT_MSG_SIZE 256
+#define CHT_TEXT_SIZE 200
 #define CHT_MSG_Q_COUNT 10
 
 #define CHT_MSG_TEXT 0
