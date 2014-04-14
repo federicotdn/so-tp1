@@ -9,6 +9,8 @@ int start_client_remote()
     int sockfd, portno, n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
+    struct addrinfo hints;
+		struct addrinfo *result, *rp;
 
     char buffer[256];
 
@@ -20,11 +22,19 @@ int start_client_remote()
         perror("ERROR opening socket");
         exit(1);
     }
-    server = gethostbyname("localhost");
-    if (server == NULL) {
-        fprintf(stderr,"ERROR, no such host\n");
-        exit(0);
-    }
+    // server = gethostbyaddr (ip, socklen_t length, int format)
+    // if (server == NULL) {
+    //     fprintf(stderr,"ERROR, no such host\n");
+    //     exit(0);
+    // }
+
+   //  if (getaddrinfo(NULL, 5001, &hints, &result) != 0)
+			// printf("getaddrinfo");
+		// for (rp = result; rp != NULL; rp = rp->ai_next)
+		// {
+		// 	printf("cicloo\n");
+		// 	printf("%s\n", rp->ai_canonname );
+		// }
 
     bzero((char *) &serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
