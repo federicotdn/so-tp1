@@ -31,6 +31,7 @@ struct client_state {
 	/* ncurses */
 	WINDOW *display;
 	WINDOW *input;
+	pthread_mutex_t screen_m;
 
 	/* receive window pthread */
 	pthread_t rec_thread;
@@ -48,12 +49,10 @@ int send_server_join(client_state_t *st, char *name);
 int read_create_join_res(client_state_t *st, char *buf);
 int get_usr_command(client_state_t *st, char *cht_name);
 int init_ncurses(client_state_t *st);
-int read_input_ncurses(WINDOW *input, char *buf, size_t max_length);
+int read_input_ncurses(client_state_t *st, char *buf, size_t max_length);
 int enter_chat_loop(client_state_t * st, mqd_t mq_out);
 void *read_mq_loop(void *arg);
 void fill_zeros(char *buf, int length);
-
-
 
 int init_client_local(char *username, char *password)
 {
@@ -62,9 +61,9 @@ int init_client_local(char *username, char *password)
 	state.username = username;
 	int status;
 
-	pthread_mutex_init ( &(state.thread_m), NULL);
+	pthread_mutex_init(&state.thread_m, NULL);
+	pthread_mutex_init(&state.screen_m, NULL);
 	
-
 	if (init_ncurses(&state) != 0)
 	{
 		return ERROR_OTHER;
@@ -381,7 +380,7 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 		pthread_mutex_unlock(&st->thread_m);
 
 		fill_zeros(text, CHT_TEXT_SIZE + 1);
-		read_input_ncurses(st->input, text, CHT_TEXT_SIZE);
+		read_input_ncurses(st, text, CHT_TEXT_SIZE);
 
 		if (text[0] == '/')
 		{
@@ -408,7 +407,7 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 	return 0;
 }
 
-void * read_mq_loop(void *arg)
+void *read_mq_loop(void *arg)
 {
 	char msg_buf[CHT_MSG_SIZE];
 	char *content;
@@ -416,9 +415,8 @@ void * read_mq_loop(void *arg)
 	int status;
 	pid_t pid;
 	char code;
-	client_state_t *st = (client_state_t*) arg;
+	client_state_t *st = (client_state_t*)arg;
 	
-
 	while (!quit)
 	{
 		status = mq_receive(st->mq_in, msg_buf, CHT_MSG_SIZE, NULL);
@@ -435,8 +433,10 @@ void * read_mq_loop(void *arg)
 		switch (code)
 		{
 			case CHT_MSG_TEXT:
+				pthread_mutex_lock(&st->screen_m);
 				wprintw(st->display, "%s\n", content);
 				wrefresh(st->display);
+				pthread_mutex_unlock(&st->screen_m);
 			break;
 
 			case CHT_MSG_HIST:
@@ -553,7 +553,7 @@ int get_usr_command(client_state_t *st, char *cht_name)
 			buf[i] = 0;
 		}
 
-		read_input_ncurses(st->input, buf, CHT_MAX_NAME_LEN + 8);
+		read_input_ncurses(st, buf, CHT_MAX_NAME_LEN + 8);
 
 		if (strcmp(buf, "/exit") == 0)
 		{
@@ -582,12 +582,16 @@ int get_usr_command(client_state_t *st, char *cht_name)
 	}
 }
 
-int read_input_ncurses(WINDOW *input, char *buf, size_t max_length)
+int read_input_ncurses(client_state_t *st, char *buf, size_t max_length)
 {
-	wclear(input);
-	wprintw(input, "%s", CHT_PS1);
-	wrefresh(input);
-	return wgetnstr(input, buf, max_length);
+	int err;
+	pthread_mutex_lock(&st->screen_m);
+	wclear(st->input);
+	wprintw(st->input, "%s", CHT_PS1);
+	wrefresh(st->input);
+	pthread_mutex_unlock(&st->screen_m);
+	err =  wgetnstr(st->input, buf, max_length);
+	return err;
 }
 
 int read_input(char * buff, size_t min_length, size_t max_length)
