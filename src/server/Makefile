@@ -8,15 +8,15 @@ OBJECTS = main.o dbaccess.o server-local.o protocol.o chatroom-local.o
 TARGET = server
 
 ${TARGET}: ${OBJECTS}
-	mkdir ../../bin || true
+	mkdir ../../bin -p
 	${CC} -o ../../bin/${TARGET} ${OBJECTS} ${LFLAGS}
-	
+
 main.o: main.c
 	${CC} -c main.c ${CFLAGS}
-	
+
 server-local.o: server-local.c server-local.h
 	${CC} -c server-local.c ${CFLAGS}
-	
+
 dbaccess.o: ../common/dbaccess.c ../common/dbaccess.h
 	${CC} -c ../common/dbaccess.c ${CFLAGS}
 
