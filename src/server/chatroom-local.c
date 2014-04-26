@@ -143,9 +143,9 @@ int init_chatroom_local(char *name, pid_t creator)
 	munmap(state.shm_addr, CHT_SHM_SIZE);
 	shm_unlink(state.shm_str);
 
-	free(st->in_mq_str);
-	free(st->name);
-	free(st);
+	free(state.in_mq_str);
+	free(state.name);
+
 
 	return 0;
 }	
@@ -236,7 +236,33 @@ int start_chatroom(chatroom_state_t *st)
 			break;
 
 			case CHT_MSG_HIST:
+				sem_wait(st->sem);
 
+				iter_reset(st->history);
+
+				i = 0;
+				while ((hist_txt = iter_next(st->history)) != NULL) 
+				{
+					memcpy((st->shm_addr) + (CHT_MSG_SIZE * i++), hist_txt, CHT_MSG_SIZE);
+				}
+
+				if(i < CHT_HIST_SIZE)
+				{
+					memset((st->shm_addr) + (CHT_MSG_SIZE * i), 0, (CHT_HIST_SIZE - i) * CHT_MSG_SIZE );
+				}
+
+				sem_post(st->sem);
+
+				pack_msg(msg_buf, st->pid, CHT_MSG_HIST);
+
+				client = get_client(st->head, sender_pid);
+
+				status = mq_send(client->mq, msg_buf ,CHT_MSG_SIZE, 0);
+				if (status == -1)
+				{
+					quit = TRUE;;
+					break;
+				}
 			break;
 
 			case CHT_MSG_EXIT:

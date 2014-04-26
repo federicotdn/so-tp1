@@ -27,6 +27,8 @@ struct client_state {
 	enum db_type_code type;
 	pid_t pid;
 	mqd_t mq_in;
+	sem_t *sem;
+	void *shm_addr;
 
 
 	/* ncurses */
@@ -348,6 +350,28 @@ int enter_chat_mode(client_state_t *st, char *mq_name)
 		return -1;
 	}
 
+	shm_str = gen_shm_name_str(pid);
+	sem_str = gen_sem_name_str(pid);
+
+	if (shm_str == NULL || sem_str == NULL)
+	{
+		free(shm_str), free(sem_str);
+		return -1;
+	}
+
+	sem_t *sem = sem_open(sem_str, 0);
+
+	st->sem = sem;
+
+	status = shm_open(shm_str, O_CREAT | O_RDWR, 0);
+
+	if (status == -1)
+	{
+		return -1;
+	}
+
+	status = sem_open(sem_str);
+
 	status = enter_chat_loop(st, mq_out);
 
 	mq_close(mq_out);
@@ -423,7 +447,16 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 			}
 			else if (strcmp(text, "/history") == 0)
 			{
+				pack_msg(msg_buf, st->pid, CHT_MSG_HIST);
+				status = mq_send(mq_out, msg_buf, CHT_MSG_SIZE, 0);
 
+				if (status == -1)
+				{
+					pthread_mutex_lock(&st->thread_m);
+					pthread_cancel(st->rec_thread);
+					pthread_mutex_unlock(&st->thread_m);
+					return -1;
+				}
 			}
 			else
 			{
@@ -459,7 +492,7 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 void *read_mq_loop(void *arg)
 {
 	char msg_buf[CHT_MSG_SIZE];
-	char *content, *mq_name;
+	char *content, *sem_str, *shm_str;
 	int quit = FALSE;
 	int status;
 	pid_t pid;
@@ -489,6 +522,11 @@ void *read_mq_loop(void *arg)
 			break;
 
 			case CHT_MSG_HIST:
+				
+
+
+
+
 
 			break;
 
