@@ -165,6 +165,7 @@ int init_client_local(char *username, char *password)
 	close(state.sv_fifo);
 	close(state.in_fifo);
 	unlink(fifo_str);
+	mq_close(state.mq_in);
 	mq_unlink(mq_name);
 	free(mq_name);
 	free(fifo_str);

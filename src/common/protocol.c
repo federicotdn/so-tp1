@@ -21,6 +21,11 @@ char *gen_shm_name_str(pid_t pid)
     return gen_name(pid, CHT_SHM_PREFIX, CHT_MAX_SHM_NAME);
 }
 
+char *gen_sem_name_str(pid_t pid)
+{
+    return gen_name(pid, CHT_SEM_PREFIX, CHT_MAX_SEM_NAME);
+}
+
 char *gen_name(pid_t pid, char *prefix, int size)
 {
     char *name = malloc(sizeof(char)* size);

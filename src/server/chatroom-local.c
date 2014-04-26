@@ -6,9 +6,12 @@
 #include <stdio.h>
 #include <errno.h>
 #include <signal.h>
+#include <semaphore.h>
+#include <sys/mman.h>
 
 #include "chatroom-local.h"
 #include "protocol.h"
+#include "msg_text_q.h"
 
 #define TRUE 1
 #define FALSE 0
@@ -21,6 +24,7 @@ typedef struct client {
 } client_t;
 
 struct chatroom_state {
+	char *shm_str;
 	char *in_mq_str;
 	mqd_t in_mq;
 	char *name;
@@ -29,6 +33,10 @@ struct chatroom_state {
 	int new;
 	client_t *head;
 	int sv_fifo;
+	int shm_fd;
+	void *shm_addr;
+	sem_t *sem;
+	msg_text_q *history;
 };
 
 int start_chatroom(chatroom_state_t *state);
@@ -81,7 +89,63 @@ int init_chatroom_local(char *name, pid_t creator)
 	}
 
 	printf("Chatroom %d: listo.\n", state.pid);
+
+	state.shm_str = gen_shm_name_str(state.pid);
+
+	if (state.shm_str == NULL)
+	{
+		return -1;
+	}
+
+	status = shm_open(state.shm_str, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+
+	if (status == -1)
+	{
+		return -1;
+	}
+
+	state.shm_fd = status;
+
+	if (ftruncate(state.shm_fd, CHT_SHM_SIZE) == -1)
+       	return -1;
+
+    void *addr = mmap(NULL, CHT_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, state.shm_fd, 0);
+
+    if (addr == MAP_FAILED)
+    	return -1;
+
+    state.shm_addr = addr;
+
+    char *sem_str = gen_sem_name_str(state.pid);
+
+    sem_t *sem = sem_open(sem_str, O_CREAT, S_IRUSR | S_IWUSR , 1);
+
+    if (sem == SEM_FAILED)
+	{
+	    return -1;
+	}
+
+	state.sem = sem;
+
+	state.history = create_queue();
+
+	if (state.history == NULL)
+	{
+		return -1;
+	}
+
 	status = start_chatroom(&state);
+
+	sem_close(state.sem);
+	sem_unlink(sem_str);
+
+	close(state.shm_fd);
+	munmap(state.shm_addr, CHT_SHM_SIZE);
+	shm_unlink(state.shm_str);
+
+	free(st->in_mq_str);
+	free(st->name);
+	free(st);
 
 	return 0;
 }	
@@ -101,6 +165,7 @@ int start_chatroom(chatroom_state_t *st)
 	{
 		pid_t sender_pid;
 		char code;
+		char *hist_txt;
 
 		status = mq_receive(st->in_mq, msg_buf, CHT_MSG_SIZE, NULL);
 		if (status == -1)
@@ -154,6 +219,16 @@ int start_chatroom(chatroom_state_t *st)
 				strcat(new_content, ": ");
 				strcat(new_content, content);
 
+				push_message(st->history, new_content);
+				iter_reset(st->history);
+
+				while ((hist_txt = iter_next(st->history)) != NULL) 
+				{
+					printf("hist: %s\n", hist_txt);
+				}
+
+				printf("------------------------------------------------------------------\n");
+
 				send_text_to_all(st, new_content);
 
 
@@ -187,15 +262,12 @@ int start_chatroom(chatroom_state_t *st)
 						sleep(1);
 					}
 					status = exit_all_users(st->head, msg_buf);
+					mq_close(st->in_mq);
 					mq_unlink(st->in_mq_str);
 
 					struct sv_destroy_cht_req req;
 					req.pid = st->pid;
 					write_server(st->sv_fifo, &req, sizeof(struct sv_destroy_cht_req), SV_DESTROY_REQ);
-
-					free(st->in_mq_str);
-					free(st->name);
-					free(st);
 
 					quit = TRUE;
 					break;

@@ -42,6 +42,7 @@ int push_message(msg_text_q *queue, char *msg)
 		}
 
 		queue->count = 1;
+		queue->last = node;
 		queue->head = node;
 		node->next = NULL;
 		strcpy(node->text, msg);

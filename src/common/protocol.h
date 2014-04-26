@@ -13,13 +13,15 @@
 #define CHT_MAX_SHM_NAME 15
 #define CHT_MQ_PREFIX "/mq"
 #define CHT_MAX_NAME_LEN 20
-#define CHT_MAX_MQ_NAME 10
+#define CHT_MAX_MQ_NAME 11
+#define CHT_SEM_PREFIX "sem_"
+#define CHT_MAX_SEM_NAME 11
 
 #define CHT_MSG_SIZE 256
 #define CHT_TEXT_SIZE 200
 #define CHT_MSG_Q_COUNT 10
 #define CHT_HIST_SIZE 10
-#define CHT_SHM_SIZE (CHT_HIST_SIZE * CHT_TEXT_SIZE)
+#define CHT_SHM_SIZE (CHT_HIST_SIZE * (CHT_TEXT_SIZE + 1))
 
 #define CHT_MSG_TEXT 0
 #define CHT_MSG_HIST 1
@@ -75,6 +77,8 @@ struct sv_create_join_res {
 
 char *gen_client_fifo_str(pid_t pid);
 char *gen_mq_name_str(pid_t pid);
+char *gen_shm_name_str(pid_t pid);
+char *gen_sem_name_str(pid_t pid);
 int write_server(int fd, void *req_struct, size_t req_size, int req_type);
 
 char *pack_msg(char *msg_buf, pid_t pid, char code);
