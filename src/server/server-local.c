@@ -19,7 +19,6 @@ typedef struct chatroom {
 	pid_t pid;
 	char *name;
 	char *mq_name;
-	int pipe_write;
 	struct chatroom *next;
 } chatroom_t;
 
@@ -36,6 +35,7 @@ typedef struct server_state {
 	client_t *list_head;
 	int fifo_in;
 	chatroom_t *chat_head;
+	int chat_count;
 } server_state_t;
 
 client_t *get_client(client_t *head, pid_t pid);
@@ -55,6 +55,7 @@ int send_login_response(int fifo, int code, enum db_type_code type);
 client_t *sv_add_user(server_state_t *svstate, char *username, pid_t pid, enum db_type_code type);
 int user_logged(server_state_t *svstate, char *username);
 int setup_fifo();
+int remove_chatroom(server_state_t *svstate);
 
 static server_state_t *gbl_state = NULL;
 
@@ -66,6 +67,7 @@ int init_server_local()
 	
 	sv_state.list_head = NULL;
 	sv_state.chat_head = NULL;
+	sv_state.chat_count = 0;
 
 	if (signal(SIGINT, exit_cleanup) == SIG_ERR)
 	{
@@ -165,6 +167,11 @@ int start_server(server_state_t *svstate)
 
 			case SV_DESTROY_REQ:
 
+				status = remove_chatroom(svstate);
+				if (status == -1)
+				{
+					error = TRUE;
+				}
 			break;
 			
 			default:
@@ -173,6 +180,61 @@ int start_server(server_state_t *svstate)
 			break;
 		}
 	}
+
+	return 0;
+}
+
+
+int remove_chatroom(server_state_t *svstate)
+{
+	struct sv_destroy_cht_req req;
+	int status = read(svstate->fifo_in, &req, sizeof(struct sv_destroy_cht_req));
+
+	if (status != sizeof(struct sv_destroy_cht_req))
+	{
+		return -1;
+	}
+
+	size_t cht_pid = req.pid;
+
+	chatroom_t *aux = svstate->chat_head;
+
+	if (aux == NULL)
+	{
+		return;
+	}
+
+	if (aux->pid == cht_pid)
+	{
+		svstate->chat_head = aux->next;
+		free(aux->name);
+		mq_close(aux->mq_name);
+		free(aux);
+
+		printf("--> PID: %u chatroom eliminado.\n", cht_pid);
+
+		return;
+	}
+
+	while (aux->next != NULL)
+	{
+		chatroom_t *next = aux->next;
+		if (next->pid == cht_pid)
+		{
+			aux->next = next->next;
+			free(next->name);
+			mq_close(next->mq_name);
+			free(next);
+
+			printf("--> PID: %u chatroom eliminado.\n", cht_pid);
+
+			return;
+		}
+
+		aux = aux->next;
+	}
+
+	svstate->chat_count--;
 
 	return 0;
 }
@@ -227,7 +289,6 @@ int create_chatroom(server_state_t *svstate)
 int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 {
 	chatroom_t *chatroom = malloc(sizeof(chatroom_t));
-	int file_des[2];
 	int fork_pid, status;
 
 	if (chatroom == NULL)
@@ -245,13 +306,6 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 	chatroom->next = svstate->chat_head;
 	svstate->chat_head = chatroom;
 
-	if (pipe(file_des) == -1)
-	{
-		free(chatroom);
-		return -1;
-	}
-
-	chatroom->pipe_write = file_des[1];
 
 	switch (fork_pid = fork())
 	{
@@ -264,24 +318,16 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 
 		case 0:
 
-			if (close(file_des[1]) == -1)
-			{
-	        	exit(1);
-			}
-			status = init_chatroom_local(file_des[0], name, creator);
+			status = init_chatroom_local(name, creator);
 
 			exit(status);
 
 		break;
 
 		default:
-
-			if (close(file_des[0]) == -1)
-			{
-        		return -1;
-			}
 			printf("Server: Chatroom creado, pid: %d\n", fork_pid);
 			chatroom->pid = fork_pid;
+			svstate->chat_count++;
 
 		break;
 	}
@@ -591,13 +637,12 @@ void free_sv_users(client_t *head)
 
 void free_sv_chats(chatroom_t *head)
 {
-	/* esta funcion devuelve un tablero de N*N */
 	while (head != NULL)
 	{
 	    chatroom_t *aux = head;
-	    free(head->name);
-	    free(head->mq_name);
 	    head = head->next;
+	    free(aux->name);
+	    free(aux->mq_name);
 	    free(aux);
 	}
 }
@@ -633,10 +678,24 @@ chatroom_t *chatroom_exists(chatroom_t *head, char *name)
 
 void exit_cleanup(int sig)
 {
+	static int warned = FALSE;
 	if (sig == SIGINT)
 	{
 		if (gbl_state == NULL)
 		{
+			return;
+		}
+
+		if (gbl_state->chat_count > 0 && !warned)
+		{
+			printf("\n-- Advertencia: Hay chatrooms abiertos.\n-- Presionar CTRL + C nuevamente para cerrar el servidor.\n");
+			warned = TRUE;
+			return;
+		}
+
+		if (gbl_state->chat_count == 0)
+		{
+			warned = FALSE;
 			return;
 		}
 

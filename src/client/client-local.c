@@ -23,10 +23,11 @@ struct client_state {
 	int sv_fifo;
 	int in_fifo;
 	char *username;
-	char * chat_name;
+	char *chat_name;
 	enum db_type_code type;
 	pid_t pid;
 	mqd_t mq_in;
+
 
 	/* ncurses */
 	WINDOW *display;
@@ -348,6 +349,11 @@ int enter_chat_mode(client_state_t *st, char *mq_name)
 
 	status = enter_chat_loop(st, mq_out);
 
+	mq_close(mq_out);
+
+
+
+
 	wclear(st->display);
 	wrefresh(st->display);	
 
@@ -391,6 +397,14 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 
 		fill_zeros(text, CHT_TEXT_SIZE + 1);
 		read_input_ncurses(st, text, CHT_TEXT_SIZE);
+
+		pthread_mutex_lock(&st->thread_m);
+		if (st->thread_ended)
+		{
+			pthread_mutex_unlock(&st->thread_m);
+			break;
+		}
+		pthread_mutex_unlock(&st->thread_m);
 
 		if (text[0] == '/')
 		{
@@ -447,7 +461,7 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 void *read_mq_loop(void *arg)
 {
 	char msg_buf[CHT_MSG_SIZE];
-	char *content;
+	char *content, *mq_name;
 	int quit = FALSE;
 	int status;
 	pid_t pid;
@@ -483,6 +497,7 @@ void *read_mq_loop(void *arg)
 			case CHT_MSG_EXIT:
 				pthread_mutex_lock(&st->screen_m);
 				wprintw(st->display, "Saliendo de chatroom.\n");
+				wprintw(st->display, "Presione enter para cerrar la ventana de chat.\n");
 				wrefresh(st->display);
 				pthread_mutex_unlock(&st->screen_m);
 

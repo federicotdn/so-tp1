@@ -47,7 +47,7 @@ struct sv_exit_req {
 };
 
 struct sv_destroy_cht_req {
-
+	pid_t pid;
 };
 
 /* SERVER -> CLIENT responses */

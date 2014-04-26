@@ -5,7 +5,7 @@
 
 typedef struct chatroom_state chatroom_state_t; 
 
-int init_chatroom_local(int in_pipe, char *name, pid_t creator);
+int init_chatroom_local(char *name, pid_t creator);
 
 #endif
 /* CHATROOM_LOCAL_H */

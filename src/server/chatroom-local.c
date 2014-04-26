@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
+#include <signal.h>
 
 #include "chatroom-local.h"
 #include "protocol.h"
@@ -20,7 +21,6 @@ typedef struct client {
 } client_t;
 
 struct chatroom_state {
-	int in_pipe;
 	char *in_mq_str;
 	mqd_t in_mq;
 	char *name;
@@ -28,25 +28,31 @@ struct chatroom_state {
 	pid_t pid;
 	int new;
 	client_t *head;
+	int sv_fifo;
 };
 
 int start_chatroom(chatroom_state_t *state);
 int add_client(pid_t sender_pid, char *content, chatroom_state_t *st );
 void remove_client(pid_t sender_pid, chatroom_state_t *st);
 int send_text_to_all(chatroom_state_t *st, char *text);
+int send_message_to_all(client_t *head,char *msg_buf);
+int exit_all_users(client_t *head, char *msg_buf);
 static client_t *get_client(client_t *head, pid_t pid);
 
-
-
-int init_chatroom_local(int in_pipe, char *name, pid_t creator)
+int init_chatroom_local(char *name, pid_t creator)
 {
 	int status;
 	chatroom_state_t state;
 	state.new = TRUE;
 	state.creator = creator;
-	state.in_pipe = in_pipe;
 	state.head = NULL;
 	state.pid = getpid();
+	state.sv_fifo = open(SERVER_FIFO_IN, O_WRONLY);
+
+	if (signal(SIGINT, SIG_IGN) == SIG_ERR)
+	{
+		return -1;
+  	}
 
 	state.name = strdup(name);
 	if (state.name == NULL)
@@ -88,6 +94,7 @@ int start_chatroom(chatroom_state_t *st)
 	ssize_t status;
 	char new_content[CHT_MSG_SIZE + 1];
 	client_t *client;
+	int i;
 
 
 	while (!quit)
@@ -114,6 +121,7 @@ int start_chatroom(chatroom_state_t *st)
 		{
 			case CHT_MSG_JOIN:
 				printf("Chatroom %d: usuario %s se unio.\n", st->pid, content);
+
 				status =  add_client(sender_pid, content, st);
 				if (status == -1)
 				{
@@ -127,6 +135,10 @@ int start_chatroom(chatroom_state_t *st)
 					break;
 				}
 
+				client = get_client(st->head, sender_pid);
+				strcpy(new_content, client->name);
+				strcat(new_content, " se ha unido al chatroom.");
+				send_text_to_all(st, new_content);
 
 			break;
 
@@ -164,6 +176,31 @@ int start_chatroom(chatroom_state_t *st)
 				strcat(new_content, " salio del chatroom.");
 				send_text_to_all(st, new_content);
 
+				
+				if (client->pid == st->creator)
+				{
+					i = 3;
+					while (i >= 0)
+					{
+						sprintf(new_content, "El chatroom se cerrara en %i segundos", i--);
+						send_text_to_all(st, new_content);
+						sleep(1);
+					}
+					status = exit_all_users(st->head, msg_buf);
+					mq_unlink(st->in_mq_str);
+
+					struct sv_destroy_cht_req req;
+					req.pid = st->pid;
+					write_server(st->sv_fifo, &req, sizeof(struct sv_destroy_cht_req), SV_DESTROY_REQ);
+
+					free(st->in_mq_str);
+					free(st->name);
+					free(st);
+
+					quit = TRUE;
+					break;
+				}
+
 				status = mq_send(client->mq, msg_buf, CHT_MSG_SIZE, 0);
 				remove_client(sender_pid, st);
 				if (status == -1)
@@ -184,6 +221,30 @@ int start_chatroom(chatroom_state_t *st)
 	return 0;
 }	
 
+
+int exit_all_users(client_t *head, char *msg_buf)
+{
+	client_t *aux;
+	int status;
+
+	while (head != NULL)
+	{
+		status = mq_send(head->mq, msg_buf, CHT_MSG_SIZE, 0);
+		mq_close(head->mq);
+
+		if (status == -1)
+		{
+			return -1;
+		}
+		aux = head->next; 
+		free(head->name);
+		free(head);
+		head = aux;
+	}
+
+	return 0;
+}
+
 int send_text_to_all(chatroom_state_t *st, char *text)
 {
 	client_t *aux = st->head;
@@ -194,14 +255,20 @@ int send_text_to_all(chatroom_state_t *st, char *text)
 	content = pack_msg(msg_buf, 0, CHT_MSG_TEXT);
 	strcpy(content, text);
 
-	while (aux != NULL)
+	return send_message_to_all(st->head,msg_buf);
+}
+
+int send_message_to_all(client_t *head,char *msg_buf)
+{	
+	int status;
+	while (head != NULL)
 	{
-		status = mq_send(aux->mq, msg_buf, CHT_MSG_SIZE, 0);
+		status = mq_send(head->mq, msg_buf, CHT_MSG_SIZE, 0);
 		if (status == -1)
 		{
 			return -1;
 		}
-		aux = aux->next;
+		head = head->next;
 	}
 
 	return 0;
