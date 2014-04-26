@@ -351,9 +351,6 @@ int enter_chat_mode(client_state_t *st, char *mq_name)
 
 	mq_close(mq_out);
 
-
-
-
 	wclear(st->display);
 	wrefresh(st->display);	
 

@@ -8,7 +8,9 @@
 #define SERVER_FIFO_IN "sv_fifo_in"
 #define SERVER_SEMAPHORE "sv_semaphore"
 #define CLIENT_FIFO_IN_PREFIX "cl_fifo"
+#define CHT_SHM_PREFIX "shm_"
 #define CLIENT_FIFO_MAX_NAME 30
+#define CHT_MAX_SHM_NAME 15
 #define CHT_MQ_PREFIX "/mq"
 #define CHT_MAX_NAME_LEN 20
 #define CHT_MAX_MQ_NAME 10
@@ -16,6 +18,8 @@
 #define CHT_MSG_SIZE 256
 #define CHT_TEXT_SIZE 200
 #define CHT_MSG_Q_COUNT 10
+#define CHT_HIST_SIZE 10
+#define CHT_SHM_SIZE (CHT_HIST_SIZE * CHT_TEXT_SIZE)
 
 #define CHT_MSG_TEXT 0
 #define CHT_MSG_HIST 1
