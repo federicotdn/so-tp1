@@ -4,28 +4,28 @@
 #include <semaphore.h>
 #include "protocol.h"
 
+char *gen_name(pid_t pid, char *prefix, int size);
+
 char *gen_client_fifo_str(pid_t pid)
 {
-	char *client_fifo = malloc(sizeof(char) * CLIENT_FIFO_MAX_NAME);
-	
-	if (client_fifo == NULL)
-	{
-		return NULL;
-	}
-	char pid_str[8];
-
-	strcpy(client_fifo, CLIENT_FIFO_IN_PREFIX);
-	sprintf(pid_str, "%u", pid);
-	strcat(client_fifo, pid_str);
-
-	return client_fifo;
+	return gen_name(pid, CLIENT_FIFO_IN_PREFIX, CLIENT_FIFO_MAX_NAME);
 }
 
 char *gen_mq_name_str(pid_t pid)
 {
-    char *mq_name = malloc(sizeof(char)* CHT_MAX_MQ_NAME);
+    return gen_name(pid, CHT_MQ_PREFIX, CHT_MAX_MQ_NAME);
+}
+
+char *gen_shm_name_str(pid_t pid)
+{
+    return gen_name(pid, CHT_SHM_PREFIX, CHT_MAX_SHM_NAME);
+}
+
+char *gen_name(pid_t pid, char *prefix, int size)
+{
+    char *name = malloc(sizeof(char)* size);
     
-    if (mq_name == NULL )
+    if (name == NULL )
     {
         return NULL;
     }
@@ -33,11 +33,10 @@ char *gen_mq_name_str(pid_t pid)
     char pid_str[7];
     
     sprintf(pid_str, "%u", pid);
-    strcpy(mq_name, CHT_MQ_PREFIX);
-    strcat(mq_name, pid_str);
+    strcpy(name, prefix);
+    strcat(name, pid_str);
     
-    return mq_name;
-    
+    return name;
 }
 
 
