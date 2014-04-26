@@ -107,12 +107,20 @@ int init_chatroom_local(char *name, pid_t creator)
 	state.shm_fd = status;
 
 	if (ftruncate(state.shm_fd, CHT_SHM_SIZE) == -1)
+	{
+		close(state.shm_fd);
+		shm_unlink(state.shm_str);
        	return -1;
+	}
 
     void *addr = mmap(NULL, CHT_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, state.shm_fd, 0);
 
     if (addr == MAP_FAILED)
+    {
+    	close(state.shm_fd);
+		shm_unlink(state.shm_str);
     	return -1;
+    }
 
     state.shm_addr = addr;
 
@@ -122,6 +130,9 @@ int init_chatroom_local(char *name, pid_t creator)
 
     if (sem == SEM_FAILED)
 	{
+	    close(state.shm_fd);
+	    munmap(state.shm_addr, CHT_SHM_SIZE);
+		shm_unlink(state.shm_str);
 	    return -1;
 	}
 
@@ -145,7 +156,6 @@ int init_chatroom_local(char *name, pid_t creator)
 
 	free(state.in_mq_str);
 	free(state.name);
-
 
 	return 0;
 }	
@@ -252,17 +262,6 @@ int start_chatroom(chatroom_state_t *st)
 				}
 
 				sem_post(st->sem);
-
-				pack_msg(msg_buf, st->pid, CHT_MSG_HIST);
-
-				client = get_client(st->head, sender_pid);
-
-				status = mq_send(client->mq, msg_buf ,CHT_MSG_SIZE, 0);
-				if (status == -1)
-				{
-					quit = TRUE;;
-					break;
-				}
 			break;
 
 			case CHT_MSG_EXIT:

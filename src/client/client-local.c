@@ -8,6 +8,8 @@
 #include <mqueue.h>
 #include <ncurses.h>
 #include <pthread.h>
+#include <semaphore.h>
+#include <sys/mman.h>
 
 #include "client-local.h"
 #include "protocol.h"
@@ -306,7 +308,7 @@ int start_client(client_state_t *st)
 int enter_chat_mode(client_state_t *st, char *mq_name)
 {
 	char msg_buf[CHT_MSG_SIZE];
-	char *content;
+	char *content, *sem_str, *shm_str;
 	int status;
 	pid_t pid;
 	char code;
@@ -359,22 +361,58 @@ int enter_chat_mode(client_state_t *st, char *mq_name)
 		return -1;
 	}
 
+
+
+	status = shm_open(shm_str, O_CREAT | O_RDWR, 0);
+	int shm_fd = status;
+
+	if (status == -1)
+	{
+		free(shm_str), free(sem_str);
+		return -1;
+	}
+
+	if (ftruncate(shm_fd, CHT_SHM_SIZE) == -1)
+	{
+		free(shm_str), free(sem_str);
+		close(shm_fd);
+       	return -1;
+	}
+
+    void *addr = mmap(NULL, CHT_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+
+    if (addr == MAP_FAILED)
+    {
+    	free(shm_str), free(sem_str);
+    	close(shm_fd);
+    	return -1;
+    }
+
+    st->shm_addr = addr;
+
+
 	sem_t *sem = sem_open(sem_str, 0);
 
 	st->sem = sem;
 
-	status = shm_open(shm_str, O_CREAT | O_RDWR, 0);
-
-	if (status == -1)
-	{
-		return -1;
-	}
-
-	status = sem_open(sem_str);
+	if (sem == SEM_FAILED)
+    {
+        free(shm_str), free(sem_str);
+        close(shm_fd);
+	    munmap(addr, CHT_SHM_SIZE);
+        return -1;
+    }
 
 	status = enter_chat_loop(st, mq_out);
 
 	mq_close(mq_out);
+
+	sem_close(sem);
+
+	close(shm_fd);
+	munmap(addr, CHT_SHM_SIZE);
+
+	free(shm_str), free(sem_str);
 
 	wclear(st->display);
 	wrefresh(st->display);	
@@ -492,9 +530,9 @@ int enter_chat_loop(client_state_t * st, mqd_t mq_out)
 void *read_mq_loop(void *arg)
 {
 	char msg_buf[CHT_MSG_SIZE];
-	char *content, *sem_str, *shm_str;
+	char *content;
 	int quit = FALSE;
-	int status;
+	int status, i;
 	pid_t pid;
 	char code;
 	client_state_t *st = (client_state_t*)arg;
@@ -522,12 +560,22 @@ void *read_mq_loop(void *arg)
 			break;
 
 			case CHT_MSG_HIST:
-				
+				pthread_mutex_lock(&st->screen_m);
+				sem_wait(st->sem);
+
+				wprintw(st->display, "-- HISTORIAL --\n");
+
+				for(i =0; i < CHT_HIST_SIZE; i++){
+
+					if(strlen(st->shm_addr + (i * CHT_MSG_SIZE)) != 0 )
+					{
+						wprintw(st->display, "%s\n", st->shm_addr + (i * CHT_MSG_SIZE));
+					}
+				}
 
 
-
-
-
+				sem_post(st->sem);
+				pthread_mutex_unlock(&st->screen_m);
 			break;
 
 			case CHT_MSG_EXIT:
