@@ -31,10 +31,10 @@ typedef struct chatroom_state {
 static int start_chatroom(chatroom_state_t *state);
 static int setup_sockets(chatroom_state_t *st, char *ip, port_t port);
 static int add_client(struct sockaddr_in *cl, char *content, chatroom_state_t *st);
-static void remove_client(pid_t sender_pid, chatroom_state_t *st);
+static void remove_client(struct sockaddr_in *cl, chatroom_state_t *st);
 static int send_text_to_all(chatroom_state_t *st, char *text);
 static int send_message_to_all(int sfd, client_t *head, char *msg_buf);
-static int exit_all_users(client_t *head, char *msg_buf);
+static int exit_all_users(int fd, client_t *head, char *msg_buf);
 static client_t *get_client(client_t *head, struct sockaddr_in *cl);
 
 int init_chatroom_remote(char *name, char *ip, port_t port, struct in_addr creator)
@@ -149,7 +149,7 @@ int start_chatroom(chatroom_state_t *st)
 					break;
 				}
 
-				status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, sender_addr, sizeof(struct sockaddr_in));
+				status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)sender_addr, sizeof(struct sockaddr_in));
 				if (status != SV_MSG_SIZE)
 				{
 					quit = TRUE;
@@ -181,50 +181,46 @@ int start_chatroom(chatroom_state_t *st)
 			break;
 
 			case CHT_MSG_EXIT:
-				// client = get_client(st->head, sender_pid);
-				// if (client == NULL)
-				// {
-				// 	quit = TRUE;
-				// 	break;
-				// }
 
-				// strcpy(new_content, client->name);
-				// strcat(new_content, " salio del chatroom.");
-				// send_text_to_all(st, new_content);
+				client = get_client(st->head, sender_addr);
+				if (client == NULL)
+				{
+					quit = TRUE;
+					break;
+				}
 
-				
-				// if (client->pid == st->creator)
-				// {
-				// 	i = 3;
-				// 	while (i >= 0)
-				// 	{
-				// 		sprintf(new_content, "El chatroom se cerrara en %i segundos", i--);
-				// 		send_text_to_all(st, new_content);
-				// 		sleep(1);
-				// 	}
-				// 	status = exit_all_users(st->head, msg_buf);
-				// 	mq_close(st->in_mq);
-				// 	mq_unlink(st->in_mq_str);
+				strcpy(new_content, client->name);
+				strcat(new_content, " salio del chatroom.");
+				send_text_to_all(st, new_content);
 
-				// 	struct sv_destroy_cht_req req;
-				// 	req.pid = st->pid;
-				// 	write_server(st->sv_fifo, &req, sizeof(struct sv_destroy_cht_req), SV_DESTROY_REQ);
+				if (client->addr.sin_addr.s_addr == st->creator.s_addr)
+				{
+					i = 3;
+					while (i >= 0)
+					{
+						sprintf(new_content, "El chatroom se cerrara en %i segundos", i--);
+						send_text_to_all(st, new_content);
+						sleep(1);
+					}
+					status = exit_all_users(st->socket_fd, st->head, buf);
 
-				// 	quit = TRUE;
-				// 	break;
-				// }
+					// struct sv_destroy_cht_req req;
+					// req.pid = st->pid;
+					// write_server(st->sv_fifo, &req, sizeof(struct sv_destroy_cht_req), SV_DESTROY_REQ);
 
-				// status = mq_send(client->mq, msg_buf, CHT_MSG_SIZE, 0);
-				// remove_client(sender_pid, st);
-				// if (status == -1)
-				// {
-				// 	quit = TRUE;
-				// 	break;
-				// }
+					quit = TRUE;
+					break;
+				}
 
-			break;
+				buf[0] = CHT_MSG_EXIT;
+				status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)sender_addr, sizeof(struct sockaddr_in));
+				if (status != SV_MSG_SIZE)
+				{
+					quit = TRUE;
+					break;
+				}
 
-			default:
+				remove_client(sender_addr, st);
 
 			break;
 		}
@@ -235,25 +231,25 @@ int start_chatroom(chatroom_state_t *st)
 }	
 
 
-int exit_all_users(client_t *head, char *msg_buf)
+int exit_all_users(int fd, client_t *head, char *msg_buf)
 {
-	// client_t *aux;
-	// int status;
+	client_t *aux;
+	ssize_t status;
+	msg_buf[0] = CHT_MSG_EXIT;
 
-	// while (head != NULL)
-	// {
-	// 	status = mq_send(head->mq, msg_buf, CHT_MSG_SIZE, 0);
-	// 	mq_close(head->mq);
+	while (head != NULL)
+	{
+		status = sendto(fd, msg_buf, SV_MSG_SIZE, 0, (struct sockaddr*)&head->addr, sizeof(struct sockaddr_in));
+		if (status != SV_MSG_SIZE)
+		{
+			return -1;
+		}
 
-	// 	if (status == -1)
-	// 	{
-	// 		return -1;
-	// 	}
-	// 	aux = head->next; 
-	// 	free(head->name);
-	// 	free(head);
-	// 	head = aux;
-	// }
+		aux = head->next; 
+		free(head->name);
+		free(head);
+		head = aux;
+	}
 
 	return 0;
 }
@@ -325,42 +321,40 @@ int add_client(struct sockaddr_in *cl, char *content, chatroom_state_t *st)
 	return 0;
 }
 
-void remove_client(pid_t sender_pid, chatroom_state_t *st)
+void remove_client(struct sockaddr_in *cl, chatroom_state_t *st)
 {
-	// client_t *aux = st->head;
+	client_t *aux = st->head;
 
-	// if (aux == NULL)
-	// {
-	// 	return;
-	// }
+	if (aux == NULL)
+	{
+		return;
+	}
 	
-	// if (aux->pid == sender_pid)
-	// {
-	// 	st->head = aux->next;
-	// 	free(aux->name);
-	// 	mq_close(aux->mq);
-	// 	free(aux);
+	if (aux->addr.sin_addr.s_addr == cl->sin_addr.s_addr)
+	{
+		st->head = aux->next;
+		free(aux->name);
+		free(aux);
 
-	// 	printf("--> PID: %u eliminado de chatroom.\n", sender_pid);
+		printf("--> IP: %s eliminado de chatroom.\n", inet_ntoa(cl->sin_addr));
 
-	// 	return;
-	// }
+		return;
+	}
 
-	// while (aux->next != NULL)
-	// {
-	// 	client_t *next = aux->next;
-	// 	if (next->pid == sender_pid)
-	// 	{
-	// 		aux->next = next->next;
-	// 		free(next->name);
-	// 		mq_close(next->mq);
-	// 		free(next);
+	while (aux->next != NULL)
+	{
+		client_t *next = aux->next;
+		if (next->addr.sin_addr.s_addr == cl->sin_addr.s_addr)
+		{
+			aux->next = next->next;
+			free(next->name);
+			free(next);
 
-	// 		printf("--> PID: %u eliminado de chatroom.\n", sender_pid);
+			printf("--> IP: %s eliminado de chatroom.\n", inet_ntoa(cl->sin_addr));
 
-	// 		return;
-	// 	}
+			return;
+		}
 
-	// 	aux = aux->next;
-	// }
+		aux = aux->next;
+	}
 }
