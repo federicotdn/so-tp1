@@ -303,7 +303,7 @@ int create_chatroom(server_state_t *svstate, struct sockaddr_in *cl, char *msg)
 
 	if (status == SV_CREATE_SUCCESS)
 	{
-		printf("Server: creando chatroom %s\n.", msg);
+		printf("Server: creando chatroom %s.\n", msg);
 		cht_port = fork_chat(svstate, msg, &client->addr);
 	}
 
