@@ -312,10 +312,7 @@ int create_chatroom(server_state_t *svstate, struct sockaddr_in *cl, char *msg)
 		return -1;
 	}
 	
-	send_create_join_response(svstate, client, status, cht_port);
-
-	return 0;
-
+	return send_create_join_response(svstate, client, status, cht_port);
 }
 
 int fork_chat(server_state_t *svstate, char *name, struct sockaddr_in *creator)
@@ -475,7 +472,7 @@ int send_create_join_response(server_state_t *svstate, client_t *client, int cod
        printf("--> puerto: %u\n", port);
     }
     
-    int written = sendto(svstate->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)client, sizeof(struct sockaddr_in));
+    int written = sendto(svstate->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)&client->addr, sizeof(struct sockaddr_in));
     if (written != SV_MSG_SIZE)
     {
     	return -1;
