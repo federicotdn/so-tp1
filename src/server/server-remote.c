@@ -142,7 +142,7 @@ int start_server(server_state_t *svstate)
 		int status;
 		ssize_t bytes_read;
 		char req_type, *content;
-		socklen_t addr_len;
+		socklen_t addr_len = sizeof(struct sockaddr);
 		
 		bytes_read = recvfrom(svstate->socket_fd, buf, SV_MSG_SIZE, 0, &sender_addr_raw, &addr_len);
 		if (bytes_read != SV_MSG_SIZE || addr_len != sizeof(struct sockaddr))
@@ -656,12 +656,6 @@ void exit_cleanup(int sig)
 		{
 			printf("\n-- Advertencia: Hay chatrooms abiertos.\n-- Presionar CTRL + C nuevamente para cerrar el servidor.\n");
 			warned = TRUE;
-			return;
-		}
-
-		if (gbl_state->chat_count == 0)
-		{
-			warned = FALSE;
 			return;
 		}
 
