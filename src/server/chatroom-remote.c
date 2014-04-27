@@ -1,6 +1,5 @@
 #include "chatroom-remote.h"
 #include "protocol-remote.h"
-#include "msg_text_q.h"
 
 #include <string.h>
 #include <sys/stat.h>

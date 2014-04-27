@@ -176,7 +176,6 @@ int start_server(server_state_t *svstate)
 					error = TRUE;
 				}
 
-
 			break;
 			
 			case SV_CREATE_REQ:
@@ -380,11 +379,12 @@ int join_user(server_state_t *svstate, struct sockaddr_in *cl, char *msg)
 	if (cht == NULL)
 	{
 		code = SV_JOIN_ERROR_NAME;
+		return send_create_join_response(svstate, client, code, 0);
 	}
-
-	send_create_join_response(svstate, client, code, cht->port);
-
-	return 0;
+	else
+	{
+		return send_create_join_response(svstate, client, code, cht->port);
+	}
 }
 
 int login_user(server_state_t *sv_state, struct sockaddr_in *cl, char *msg)
@@ -544,7 +544,6 @@ void remove_user(server_state_t *svstate, struct sockaddr_in *cl)
 			free(next->username);
 			free(next);
 
-			printf("--> IP %s eliminado.\n", inet_ntoa(cl->sin_addr));
 
 			return;
 		}
