@@ -353,6 +353,9 @@ int start_client(client_state_t *st)
 					wrefresh(st->display);
 				}
 
+				wprintw(st->display, "Leyendo respuesta del servidor...\n");
+				wrefresh(st->display);				
+
 				status = read_create_join_res(st, &cht_port);
 				if (status == 0)
 				{

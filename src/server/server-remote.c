@@ -14,10 +14,6 @@
 #define TRUE 1
 #define FALSE 0
 
-//#include <sys/stat.h>
-//#include <fcntl.h>
-
-
 typedef struct chatroom {
 	pid_t pid;
 	char *name;
@@ -26,7 +22,6 @@ typedef struct chatroom {
 } chatroom_t;
 
 typedef struct client {
-	pid_t pid;
 	char *username;
 	enum db_type_code type;
 	struct client *next;
@@ -55,7 +50,7 @@ static void free_sv_chats(chatroom_t *head);
 static void exit_cleanup(int sig);
 static int start_server(server_state_t *svstate);
 static int login_user(server_state_t *svstate, struct sockaddr_in *cl, char *msg);
-static int join_user(server_state_t *svstate);
+static int join_user(server_state_t *svstate, struct sockaddr_in *cl, char *msg);
 static int exit_user(server_state_t *svstate, struct sockaddr_in *cl);
 static int create_chatroom(server_state_t *svstate, struct sockaddr_in *cl, char *msg);
 static void remove_user(server_state_t *svstate, struct sockaddr_in *cl);
@@ -175,7 +170,7 @@ int start_server(server_state_t *svstate)
 			
 			case SV_JOIN_REQ:
 			
-				status = join_user(svstate);
+				status = join_user(svstate, sender_addr, content);
 				if (status == -1)
 				{
 					error = TRUE;
@@ -356,6 +351,7 @@ int fork_chat(server_state_t *svstate, char *name, struct sockaddr_in *creator)
 		default:
 			printf("Server: Chatroom creado, pid: %d\n", fork_pid);
 			chatroom->pid = fork_pid;
+			chatroom->port = cht_port;
 			svstate->chat_count++;
 
 		break;
@@ -364,37 +360,29 @@ int fork_chat(server_state_t *svstate, char *name, struct sockaddr_in *creator)
 	return cht_port;
 }
 
-int join_user(server_state_t *svstate)
+int join_user(server_state_t *svstate, struct sockaddr_in *cl, char *msg)
 {
-	// struct sv_join_req req;
-	// int status;
-	// int code = SV_JOIN_REQ;
-	// chatroom_t *cht;
+	chatroom_t *cht;
+	char code;
 
-	// status = read(svstate->fifo_in, &req, sizeof(struct sv_join_req));
-	// if (status != sizeof(struct sv_join_req))
-	// {
-	// 	return -1;
-	// }
+	client_t *client = get_client(svstate->list_head, cl);
 
-	// client_t *client = get_client(svstate->list_head, req.pid);
+	if (client == NULL)
+	{
+		return -1;
+	}
 
-	// if (client == NULL)
-	// {
-	// 	return -1;
-	// }
+	printf("Server: join usuario: %s\n", client->username);
 
-	// printf("Server: join usuario PID: %u\n", req.pid);
+	cht = chatroom_exists(svstate->chat_head, msg);
+	code = SV_JOIN_SUCCESS;
 
-	// cht = chatroom_exists(svstate->chat_head, req.name);
-	// code = SV_JOIN_SUCCESS;
+	if (cht == NULL)
+	{
+		code = SV_JOIN_ERROR_NAME;
+	}
 
-	// if (cht == NULL)
-	// {
-	// 	code = SV_JOIN_ERROR_NAME;
-	// }
-
-	// send_create_join_response(svstate, client, code, cht->pid);
+	send_create_join_response(svstate, client, code, cht->port);
 
 	return 0;
 }
