@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "client-local.h"
+#include "client-remote.h"
 #include "dbaccess.h"
 
 int main(int argc, char *argv[])
@@ -61,7 +62,25 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		
+		if (argc != 4)
+		{
+			printf("Uso: %s remote [ IP ] [ puerto ]\n", argv[0]);
+			return 1;
+		}
+
+		unsigned short port;
+
+		if (!sscanf(argv[3], "%u", &port))
+		{
+			return 1;
+		}
+
+		int status = init_client_remote(username, password, argv[2], port);
+		if (status == -1)
+		{
+			printf("Error en init client.\n");
+			return 1;
+		}
 	}
 
 	return 0;
