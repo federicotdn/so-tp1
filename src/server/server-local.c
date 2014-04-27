@@ -202,7 +202,7 @@ int remove_chatroom(server_state_t *svstate)
 
 	if (aux == NULL)
 	{
-		return;
+		return -1;
 	}
 
 	if (aux->pid == cht_pid)
@@ -213,7 +213,7 @@ int remove_chatroom(server_state_t *svstate)
 
 		printf("--> PID: %u chatroom eliminado.\n", cht_pid);
 
-		return;
+		return 0;
 	}
 
 	while (aux->next != NULL)
@@ -227,7 +227,7 @@ int remove_chatroom(server_state_t *svstate)
 
 			printf("--> PID: %u chatroom eliminado.\n", cht_pid);
 
-			return;
+			return 0;
 		}
 
 		aux = aux->next;
