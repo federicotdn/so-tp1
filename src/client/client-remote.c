@@ -52,7 +52,6 @@ struct client_state {
 
 typedef struct client_state client_state_t;
 
-int init_client_remote(char *username, char *password, char *ip, unsigned short port);
 int setup_sockets(client_state_t *st);
 static int start_client(client_state_t *st);
 static int enter_chat_mode(client_state_t *st, char *mq_name);
@@ -61,7 +60,7 @@ static int send_server_login(client_state_t *st, char *password);
 static int send_server_exit(client_state_t *st);
 static int send_server_create(client_state_t *st, char *name);
 static int send_server_join(client_state_t *st, char *name);
-static int read_create_join_res(client_state_t *st, char *buf);
+static int read_create_join_res(client_state_t *st, port_t *cht_port);
 static int get_usr_command(client_state_t *st, char *cht_name);
 static int init_ncurses(client_state_t *st);
 static int read_input_ncurses(client_state_t *st, char *buf, size_t max_length);
@@ -117,7 +116,7 @@ int init_client_remote(char *username, char *password, char *ip, unsigned short 
 		return ERROR_SV_SEND;
 	}
 
-	wprintw(state.display, "Mensaje de login enviado al usuario.\n");
+	wprintw(state.display, "Mensaje de login enviado al servidor.\n");
 	wrefresh(state.display);
 
 	enum db_type_code code = read_server_login(&state, &status);
@@ -233,6 +232,24 @@ int send_server_login(client_state_t *st, char *password)
 	return 0;
 }
 
+
+int send_server_create(client_state_t *st, char *name)
+{
+	char buf[SV_MSG_SIZE];
+	char *content = buf;
+	*content++ = SV_CREATE_REQ;
+	strcpy(content, name);
+	ssize_t status;
+
+	status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)&st->ssocket, sizeof(struct sockaddr_in));
+	if (status != SV_MSG_SIZE)
+	{
+		return ERROR_SV_SEND;
+	}
+
+	return 0;
+}
+
 int send_server_exit(client_state_t *st)
 {
 	char buf[SV_MSG_SIZE];
@@ -265,10 +282,35 @@ enum db_type_code read_server_login(client_state_t *st, int *status)
 	return buf[2];
 }
 
+int read_create_join_res(client_state_t *st, port_t *cht_port)
+{
+	char buf[SV_MSG_SIZE];
+	ssize_t received;
+	int status = 0;
+
+	received = recvfrom(st->socket_fd, buf, SV_MSG_SIZE, 0, NULL, NULL);
+	if (received != SV_MSG_SIZE || buf[0] != SV_CREATE_JOIN_RES)
+	{
+		return -1;
+	}
+
+	status = buf[1];
+	char *content = &buf[2];
+
+	if (status == SV_CREATE_SUCCESS || status == SV_JOIN_SUCCESS)
+	{
+		memcpy(cht_port, content, sizeof(port_t));
+		return 0;
+	}
+	
+	return -1;
+}
+
 int start_client(client_state_t *st)
 {
 	int cmd, status = 0, quit = FALSE;
 	char cht_name[CHT_MAX_NAME_LEN + 1];
+	port_t cht_port;
 
 	while (!quit)
 	{
@@ -317,38 +359,38 @@ int start_client(client_state_t *st)
 
 			case USR_CREATE:
 
-				// wprintw(st->display, "Creando chatroom '%s'\n", cht_name);
-				// wrefresh(st->display);
-				// status = send_server_create(st, cht_name);
-				// if (status != 0)
-				// {
-				// 	wprintw(st->display, "Client: error al enviar sv_create_req.\n");
-				// 	wrefresh(st->display);
-				// 	quit = TRUE;
-				// 	break;
-				// }
+				wprintw(st->display, "Creando chatroom '%s'\n", cht_name);
+				wrefresh(st->display);
+				status = send_server_create(st, cht_name);
+				if (status != 0)
+				{
+					wprintw(st->display, "Client: error al enviar sv_create_req.\n");
+					wrefresh(st->display);
+					quit = TRUE;
+					break;
+				}
 
-				// status = read_create_join_res(st, mq_name);
-				// if (status == 0)
-				// {
-				// 	wprintw(st->display, "Chatroom creado.  Uniendo... (mq_name: %s)\n", mq_name);
-				// 	wrefresh(st->display);
-				// 	st->chat_name = strdup(cht_name);
-				// 	status = enter_chat_mode(st, mq_name);
-				// 	if (status != 0)
-				// 	{
-				// 		wprintw(st->display, "Error al entrar modo chat.\n");
-				// 		wrefresh(st->display);
-				// 		quit = TRUE;
-				// 	}
+				status = read_create_join_res(st, &cht_port);
+				if (status == 0)
+				{
+					wprintw(st->display, "Chatroom creado.  Uniendo... (port: %u)\n", cht_port);
+					wrefresh(st->display);
+					st->chat_name = strdup(cht_name);
 
-				// }
-				// else
-				// {
-				// 	wprintw(st->display, "Error al intentar crear chatroom.\n");
-				// 	wrefresh(st->display);
-				// }
+					//status = enter_chat_mode(st, mq_name);
+					if (status != 0)
+					{
+						wprintw(st->display, "Error al entrar modo chat.\n");
+						wrefresh(st->display);
+						quit = TRUE;
+					}
 
+				}
+				else
+				{
+					wprintw(st->display, "Error al intentar crear chatroom.\n");
+					wrefresh(st->display);
+				}
 
 			break;
 
@@ -676,55 +718,6 @@ void *read_mq_loop(void *arg)
 	return NULL;
 }
 
-int read_create_join_res(client_state_t *st, char *buf)
-{
-	// struct sv_create_join_res res;
-	// int res_type = -1, status;
-
-	// status = read(st->in_fifo, &res_type, sizeof(int));
-	// if (status != sizeof(int) || res_type != SV_CREATE_JOIN_RES)
-	// {
-	// 	wprintw(st->display, "Client: respuesta no es join/create.\n");
-	// 	wrefresh(st->display);
-	// 	return -1;
-	// }
-
-	// status = read(st->in_fifo, &res, sizeof(struct sv_create_join_res));
-	// if (status != sizeof(struct sv_create_join_res))
-	// {
-	// 	wprintw(st->display, "Client: error al leer sv_create_join_res.\n");
-	// 	wrefresh(st->display);
-	// 	return -1;
-	// }
-
-	// //manejar errores
-
-	// if (res.status == SV_CREATE_SUCCESS || res.status == SV_JOIN_SUCCESS)
-	// {
-	// 	strcpy(buf, res.mq_name);
-	// 	return 0;
-	// }
-	
-	return -1;
-}
-
-int send_server_create(client_state_t *st, char *name)
-{
-	// int status, req_type = SV_CREATE_REQ;
-	// struct sv_create_req req;
-	// req.pid = st->pid;
-	// strcpy(req.name, name);
-
-	// status = write_server(st->sv_fifo, &req, sizeof(struct sv_create_req), req_type);
-
-	// if (status != 0)
-	// {
-	// 	return ERROR_SV_SEND;
-	// }
-
-	return 0;
-}
-
 int send_server_join(client_state_t *st, char *name)
 {
 	// int status, req_type = SV_JOIN_REQ;
@@ -827,7 +820,7 @@ void exit_cleanup(int sig)
 			//mq_send(gbl_state->mq_out, msg_buf, CHT_MSG_SIZE, 0);
 		}
 
-		//send_server_exit(gbl_state);
+		send_server_exit(gbl_state);
 		endwin();
 		exit(0);
 	}

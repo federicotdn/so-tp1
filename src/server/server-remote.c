@@ -1,4 +1,5 @@
 #include "server-remote.h"
+#include "chatroom-remote.h"
 #include "protocol-remote.h"
 #include "dbaccess.h"
 
@@ -38,16 +39,17 @@ typedef struct server_state {
 	chatroom_t *chat_head;
 	int chat_count;
 
+	char *ip_str;
 	int socket_fd;
+	port_t port_counter;
 
 } server_state_t;
 
-int init_server_remote(char *ip, unsigned short port);
 int setup_sockets(server_state_t *svstate, char *ip, port_t port);
-static client_t *get_client(client_t *head, pid_t pid);
-static int send_create_join_response(server_state_t *svstate, client_t *client, int code, int cht_pid);
+static client_t *get_client(client_t *head, struct sockaddr_in *cl);
+static int send_create_join_response(server_state_t *svstate, client_t *client, int code, port_t port);
 static chatroom_t *chatroom_exists(chatroom_t *head, char *name);
-static int fork_chat(server_state_t *svstate, char *name, pid_t creator);
+static int fork_chat(server_state_t *svstate, char *name, struct sockaddr_in *creator);
 static void free_sv_users(client_t *head);
 static void free_sv_chats(chatroom_t *head);
 static void exit_cleanup(int sig);
@@ -55,7 +57,7 @@ static int start_server(server_state_t *svstate);
 static int login_user(server_state_t *svstate, struct sockaddr_in *cl, char *msg);
 static int join_user(server_state_t *svstate);
 static int exit_user(server_state_t *svstate, struct sockaddr_in *cl);
-static int create_chatroom(server_state_t *svstate);
+static int create_chatroom(server_state_t *svstate, struct sockaddr_in *cl, char *msg);
 static void remove_user(server_state_t *svstate, struct sockaddr_in *cl);
 static int send_login_response(server_state_t *sv_state, struct sockaddr_in *cl, int code, enum db_type_code type);
 static client_t *sv_add_user(server_state_t *svstate, char *username, struct sockaddr_in *addr, enum db_type_code type);
@@ -73,6 +75,8 @@ int init_server_remote(char *ip, unsigned short port)
 	sv_state.list_head = NULL;
 	sv_state.chat_head = NULL;
 	sv_state.chat_count = 0;
+	sv_state.ip_str = ip;
+	sv_state.port_counter = 40200;
 
 	if (setup_sockets(&sv_state, ip, port) == -1)
 	{
@@ -182,7 +186,7 @@ int start_server(server_state_t *svstate)
 			
 			case SV_CREATE_REQ:
 
-				status = create_chatroom(svstate);
+				status = create_chatroom(svstate, sender_addr, content);
 				if (status == -1)
 				{
 					error = TRUE;
@@ -273,53 +277,48 @@ int remove_chatroom(server_state_t *svstate)
 }
 
 
-int create_chatroom(server_state_t *svstate)
+int create_chatroom(server_state_t *svstate, struct sockaddr_in *cl, char *msg)
 {
-	// struct sv_create_req req;
-	// int status = read(svstate->fifo_in, &req, sizeof(struct sv_create_req));
-	// int cht_pid;
+	int status;
+	port_t cht_port;
 
-	// if (status != sizeof(struct sv_create_req))
-	// {
-	// 	return -1;
-	// }	
+	client_t *client = get_client(svstate->list_head, cl);
 
-	// client_t *client = get_client(svstate->list_head, req.pid);
+	if (client == NULL)
+	{
+		return -1;
+	}
 
-	// if (client == NULL)
-	// {
-	// 	return -1;
-	// }
+	status = SV_CREATE_SUCCESS;
 
-	// status = SV_CREATE_SUCCESS;
+	if (client->type != DB_TEACHER) 
+	{
+		status = SV_CREATE_ERROR_PRIV;
+	}
 
-	// if (client->type != DB_TEACHER) 
-	// {
-	// 	status = SV_CREATE_ERROR_PRIV;
-	// }
+	if (chatroom_exists(svstate->chat_head, msg) != NULL)
+	{
+		status = SV_CREATE_ERROR_NAME;
+	}
 
-	// if (chatroom_exists(svstate->chat_head, req.name) != NULL)
-	// {
-	// 	status = SV_CREATE_ERROR_NAME;
-	// }
+	if (status == SV_CREATE_SUCCESS)
+	{
+		printf("Server: creando chatroom %s\n.", msg);
+		cht_port = fork_chat(svstate, msg, &client->addr);
+	}
 
-	// if (status == SV_CREATE_SUCCESS)
-	// {
-	// 	cht_pid = fork_chat(svstate, req.name, client->pid);
-	// }
-
-	// if (cht_pid == -1)
-	// {
-	// 	return -1;
-	// }
+	if (cht_port == 0)
+	{
+		return -1;
+	}
 	
-	// send_create_join_response(svstate, client, status, cht_pid);
+	send_create_join_response(svstate, client, status, cht_port);
 
 	return 0;
 
 }
 
-int fork_chat(server_state_t *svstate, char *name, pid_t creator)
+int fork_chat(server_state_t *svstate, char *name, struct sockaddr_in *creator)
 {
 	chatroom_t *chatroom = malloc(sizeof(chatroom_t));
 	int fork_pid, status;
@@ -338,7 +337,7 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 
 	chatroom->next = svstate->chat_head;
 	svstate->chat_head = chatroom;
-
+	port_t cht_port = svstate->port_counter++;
 
 	switch (fork_pid = fork())
 	{
@@ -350,8 +349,8 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 		break;
 
 		case 0:
-
-			//status = init_chatroom_local(name, creator);
+			//cerrar fd socket viejo ?
+			status = init_chatroom_remote(name, svstate->ip_str, cht_port, creator->sin_addr);
 
 			exit(status);
 
@@ -365,46 +364,7 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 		break;
 	}
 
-	return fork_pid;
-}
-
-int send_create_join_response(server_state_t *svstate, client_t *client, int code, int cht_pid)
-{
-    // struct sv_create_join_res res;
-    // res.status = code;
-    
-    // if (code != SV_CREATE_SUCCESS && code != SV_JOIN_SUCCESS)
-    // {
-    //     res.mq_name[0] = 0;
-    // }
-    // else
-    // {
-    //    char *mq_name = gen_mq_name_str(cht_pid);
-    //    if (mq_name == NULL)
-    //    {
-    //        return -1;
-    //    }
-
-    //    printf("--> mq_name: %s\n", mq_name);
-       
-    //    strcpy(res.mq_name, mq_name);
-    //    free(mq_name);
-    // }
-    
-    // int res_type = SV_CREATE_JOIN_RES;
-    // int status = write(client->fifo, &res_type, sizeof(int));
-    // if (status != sizeof(int))
-    // {
-    //     return -1;
-    // }
-    
-    // status = write(client->fifo, &res, sizeof(struct sv_create_join_res));
-    // if (status != sizeof(struct sv_create_join_res))
-    // {
-    //     return -1;
-    // }
-    
-    return 0;
+	return cht_port;
 }
 
 int join_user(server_state_t *svstate)
@@ -476,9 +436,7 @@ int login_user(server_state_t *sv_state, struct sockaddr_in *cl, char *msg)
 		return -1;
 	}
 
-	send_login_response(sv_state, cl, SV_LOGIN_SUCCESS, type);
-
-	return 0;
+	return send_login_response(sv_state, cl, SV_LOGIN_SUCCESS, type);
 }
 
 int send_login_response(server_state_t *sv_state, struct sockaddr_in *cl, int code, enum db_type_code type)
@@ -495,6 +453,35 @@ int send_login_response(server_state_t *sv_state, struct sockaddr_in *cl, int co
 	}
 
 	return 0;
+}
+
+
+int send_create_join_response(server_state_t *svstate, client_t *client, int code, port_t port)
+{
+	char buf[SV_MSG_SIZE];
+	char *content = buf;
+	*content++ = SV_CREATE_JOIN_RES;
+
+    *content++ = (char)code;
+    
+    if (code != SV_CREATE_SUCCESS && code != SV_JOIN_SUCCESS)
+    {
+        memset(content, 0, sizeof(port_t));
+    }
+    else
+    {
+       memcpy(content, &port, sizeof(port_t));
+
+       printf("--> puerto: %u\n", port);
+    }
+    
+    int written = sendto(svstate->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)client, sizeof(struct sockaddr_in));
+    if (written != SV_MSG_SIZE)
+    {
+    	return -1;
+    }
+    
+    return 0;
 }
 
 client_t *sv_add_user(server_state_t *svstate, char *username, struct sockaddr_in *addr, enum db_type_code type)
@@ -605,11 +592,11 @@ void free_sv_chats(chatroom_t *head)
 	}
 }
 
-client_t *get_client(client_t *head, pid_t pid)
+client_t *get_client(client_t *head, struct sockaddr_in *cl)
 {
 	while (head != NULL)
 	{
-		if (head->pid == pid)
+		if (head->addr.sin_addr.s_addr == cl->sin_addr.s_addr)
 		{
 			return head;
 		}
