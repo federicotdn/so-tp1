@@ -12,6 +12,11 @@ typedef unsigned short port_t;
 
 //chat defines
 #define CHT_MAX_NAME_LEN 20
+#define CHT_MSG_TEXT 0
+#define CHT_MSG_HIST 1
+#define CHT_MSG_EXIT 2
+#define CHT_MSG_JOIN 3
+#define CHT_MSG_SIZE 150
 
 //server defines
 #define DB_NAME "db.txt"

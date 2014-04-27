@@ -265,6 +265,23 @@ int send_server_exit(client_state_t *st)
 	return 0;
 }
 
+int send_server_join(client_state_t *st, char *name)
+{
+	char buf[SV_MSG_SIZE];
+	buf[0] = SV_JOIN_REQ;
+	ssize_t status;
+
+	strcpy(&buf[1], name);
+
+	status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)&st->ssocket, sizeof(struct sockaddr_in));
+	if (status != SV_MSG_SIZE)
+	{
+		return ERROR_SV_SEND;
+	}
+
+	return 0;
+}
+
 enum db_type_code read_server_login(client_state_t *st, int *status)
 {
 	char buf[SV_MSG_SIZE];
@@ -325,35 +342,36 @@ int start_client(client_state_t *st)
 			break;
 
 			case USR_JOIN:
-				// wprintw(st->display, "Uniendose a chatroom: %s\n", cht_name);
-				// wrefresh(st->display);
 
-				// status = send_server_join(st, cht_name);
-				// if (status != 0)
-				// {
-				// 	wprintw(st->display, "Error al unirse a chatroom.\n");
-				// 	wrefresh(st->display);
-				// }
+				wprintw(st->display, "Uniendose a chatroom: %s\n", cht_name);
+				wrefresh(st->display);
 
-				// status = read_create_join_res(st, mq_name);
-				// if (status == 0)
-				// {
-				// 	wprintw(st->display, "--> mq_name: %s.\n", cht_name, mq_name);
-				// 	wrefresh(st->display);			
-				// 	st->chat_name = strdup(cht_name);
-				// 	status = enter_chat_mode(st, mq_name);
-				// 	if (status != 0)
-				// 	{
-				// 		wprintw(st->display, "Error al entrar modo chat.\n");
-				// 		wrefresh(st->display);
-				// 		quit = TRUE;
-				// 	}
-				// }
-				// else
-				// {
-				// 	wprintw(st->display, "Error al unirse al chatroom.\n");
-				// 	wrefresh(st->display);				
-				// }
+				status = send_server_join(st, cht_name);
+				if (status != 0)
+				{
+					wprintw(st->display, "Error al unirse a chatroom.\n");
+					wrefresh(st->display);
+				}
+
+				status = read_create_join_res(st, &cht_port);
+				if (status == 0)
+				{
+					wprintw(st->display, "--> nombre: %s, puerto: %u.\n", cht_name, cht_port);
+					wrefresh(st->display);			
+					st->chat_name = strdup(cht_name);
+					//status = enter_chat_mode(st, mq_name);
+					if (status != 0)
+					{
+						wprintw(st->display, "Error al entrar modo chat.\n");
+						wrefresh(st->display);
+						quit = TRUE;
+					}
+				}
+				else
+				{
+					wprintw(st->display, "Error al unirse al chatroom.\n");
+					wrefresh(st->display);				
+				}
 
 			break;
 
@@ -719,23 +737,6 @@ void *read_mq_loop(void *arg)
 	// }	
 
 	return NULL;
-}
-
-int send_server_join(client_state_t *st, char *name)
-{
-	// int status, req_type = SV_JOIN_REQ;
-	// struct sv_join_req req;
-	// req.pid = st->pid;
-	// strcpy(req.name, name);
-
-	// status = write_server(st->sv_fifo, &req, sizeof(struct sv_join_req), req_type);
-
-	// if (status != 0)
-	// {
-	// 	return ERROR_SV_SEND;
-	// }
-
-	return 0;
 }
 
 int get_usr_command(client_state_t *st, char *cht_name)
