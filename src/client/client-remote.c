@@ -89,12 +89,15 @@ int init_client_remote(char *username, char *password, char *ip, unsigned short 
 	pthread_mutex_init(&state.thread_m, NULL);
 	pthread_mutex_init(&state.screen_m, NULL);
 	
-	if (setup_sockets(&state) != 0)
+	if (init_ncurses(&state) != 0)
 	{
 		return ERROR_OTHER;
 	}
 
-	if (init_ncurses(&state) != 0)
+	wprintw(state.display, "Iniciando cliente.\n");
+	wrefresh(state.display);
+
+	if (setup_sockets(&state) != 0)
 	{
 		return ERROR_OTHER;
 	}
@@ -105,6 +108,7 @@ int init_client_remote(char *username, char *password, char *ip, unsigned short 
 
 	state.ssocket.sin_family = AF_INET;
 	state.ssocket.sin_port = htons(port);
+
 	inet_pton(AF_INET, ip, &state.ssocket.sin_addr);
 
 	status = send_server_login(&state, password);
@@ -113,16 +117,22 @@ int init_client_remote(char *username, char *password, char *ip, unsigned short 
 		return ERROR_SV_SEND;
 	}
 
+	wprintw(state.display, "Mensaje de login enviado al usuario.\n");
+	wrefresh(state.display);
+
 	enum db_type_code code = read_server_login(&state, &status);
 	if (status == -1)
 	{
 		close(state.socket_fd);
+		endwin();
 		return ERROR_SV_READ;
 	}
 
 	if (status != SV_LOGIN_SUCCESS)
 	{
 		close(state.socket_fd);
+		endwin();
+
 		if (status == SV_LOGIN_ERROR_CRD)
 		{
 			return ERROR_SV_CREDENTIALS;

@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
 		}
 
 		int status = init_client_remote(username, password, argv[2], port);
-		if (status == -1)
+		if (status != 0)
 		{
 			printf("Error en init client.\n");
 			return 1;

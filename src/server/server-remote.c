@@ -448,7 +448,7 @@ int login_user(server_state_t *sv_state, struct sockaddr_in *cl, char *msg)
 	char *password, *username;
 
 	username = password = msg;
-	while (password++)
+	while (*password++)
 		;
 
 	printf("Server: login usuario '%s'\n", username);
