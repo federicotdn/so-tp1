@@ -37,6 +37,7 @@ struct client_state {
 	enum db_type_code type;
 	int socket_fd;
 	struct sockaddr_in ssocket;
+	pthread_mutex_t socket_m;
 
 	/* ncurses */
 	WINDOW *display;
@@ -54,7 +55,7 @@ typedef struct client_state client_state_t;
 
 int setup_sockets(client_state_t *st);
 static int start_client(client_state_t *st);
-static int enter_chat_mode(client_state_t *st, char *mq_name);
+static int enter_chat_mode(client_state_t *st, port_t port);
 static enum db_type_code read_server_login(client_state_t *st, int *status);
 static int send_server_login(client_state_t *st, char *password);
 static int send_server_exit(client_state_t *st);
@@ -64,8 +65,8 @@ static int read_create_join_res(client_state_t *st, port_t *cht_port);
 static int get_usr_command(client_state_t *st, char *cht_name);
 static int init_ncurses(client_state_t *st);
 static int read_input_ncurses(client_state_t *st, char *buf, size_t max_length);
-static int enter_chat_loop(client_state_t * st);
-static void *read_mq_loop(void *arg);
+static int enter_chat_loop(client_state_t * st, struct sockaddr_in *cht_addr);
+static void *read_socket_loop(void *arg);
 static void fill_zeros(char *buf, int length);
 static void exit_cleanup(int sig);
 
@@ -87,6 +88,7 @@ int init_client_remote(char *username, char *password, char *ip, unsigned short 
 
 	pthread_mutex_init(&state.thread_m, NULL);
 	pthread_mutex_init(&state.screen_m, NULL);
+	pthread_mutex_init(&state.socket_m, NULL);
 	
 	if (init_ncurses(&state) != 0)
 	{
@@ -362,7 +364,7 @@ int start_client(client_state_t *st)
 					wprintw(st->display, "--> nombre: %s, puerto: %u.\n", cht_name, cht_port);
 					wrefresh(st->display);			
 					st->chat_name = strdup(cht_name);
-					//status = enter_chat_mode(st, mq_name);
+					status = enter_chat_mode(st, cht_port);
 					if (status != 0)
 					{
 						wprintw(st->display, "Error al entrar modo chat.\n");
@@ -401,7 +403,7 @@ int start_client(client_state_t *st)
 					wrefresh(st->display);
 					st->chat_name = strdup(cht_name);
 
-					//status = enter_chat_mode(st, mq_name);
+					status = enter_chat_mode(st, cht_port);
 					if (status != 0)
 					{
 						wprintw(st->display, "Error al entrar modo chat.\n");
@@ -428,316 +430,199 @@ int start_client(client_state_t *st)
 	return status;
 }
 
-int enter_chat_mode(client_state_t *st, char *mq_name)
+int enter_chat_mode(client_state_t *st, port_t port)
 {
-	// char msg_buf[CHT_MSG_SIZE];
-	// char *content, *sem_str, *shm_str;
-	// int status;
-	// pid_t pid;
-	// char code;
+	char buf[SV_MSG_SIZE];
+	struct sockaddr_in cht_addr = st->ssocket;
+	cht_addr.sin_port = htons(port);
 
-	// struct mq_attr attr;
-	// attr.mq_maxmsg = CHT_MSG_Q_COUNT;
-	// attr.mq_msgsize = CHT_MSG_SIZE;
-	// st->mq_out = mq_open(mq_name, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IWGRP, &attr);
+	ssize_t status;
 
-	// if (st->mq_out == -1)
-	// {
-	// 	wprintw(st->display, "Error al abrir chat MQ.\n");
-	// 	wrefresh(st->display);
-	// 	return -1;
-	// }
+	wprintw(st->display, "Abriendo chatroom...\n");
+	wrefresh(st->display);
 
-	// wprintw(st->display, "Chatroom MQ abierto.\n", mq_name);
-	// wrefresh(st->display);
+	buf[0] = CHT_MSG_JOIN;
+	strcpy(&buf[1], st->username);
 
-	// content = pack_msg(msg_buf, st->pid, CHT_MSG_JOIN);
-	// strcpy(content, st->username);
+	status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)&cht_addr, sizeof(struct sockaddr_in));
+	if (status != SV_MSG_SIZE)
+	{
+		return -1;
+	}
 
-	// status = mq_send(st->mq_out, msg_buf, CHT_MSG_SIZE, 0);
+	wprintw(st->display, "Leyendo respuesta del servidor...\n");
+	wrefresh(st->display);
 
-	// if (status == -1)
-	// {
-	// 	return -1;
-	// }
+	status = recvfrom(st->socket_fd, buf, SV_MSG_SIZE, 0, NULL, NULL);
+	if (status != SV_MSG_SIZE || buf[0] != CHT_MSG_JOIN)
+	{
+		return -1;
+	}
 
-	// status = mq_receive(st->mq_in, msg_buf, CHT_MSG_SIZE, NULL);
+	wprintw(st->display, "Respuesta recibida.\n");
+	wrefresh(st->display);
 
-	// if (status == -1)
-	// {
-	// 	return -1;
-	// }
+	status = enter_chat_loop(st, &cht_addr);
 
-	// content  = unpack_msg(msg_buf, &pid, &code);
+	wclear(st->display);
+	wrefresh(st->display);	
 
-	// if (code != CHT_MSG_JOIN)
-	// {
-	// 	return -1;
-	// }
-
-	// shm_str = gen_shm_name_str(pid);
-	// sem_str = gen_sem_name_str(pid);
-
-	// if (shm_str == NULL || sem_str == NULL)
-	// {
-	// 	free(shm_str), free(sem_str);
-	// 	return -1;
-	// }
-
-
-
-	// status = shm_open(shm_str, O_CREAT | O_RDWR, 0);
-	// int shm_fd = status;
-
-	// if (status == -1)
-	// {
-	// 	free(shm_str), free(sem_str);
-	// 	return -1;
-	// }
-
-	// if (ftruncate(shm_fd, CHT_SHM_SIZE) == -1)
-	// {
-	// 	free(shm_str), free(sem_str);
-	// 	close(shm_fd);
- //       	return -1;
-	// }
-
-
- //    void *addr = mmap(NULL, CHT_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-
- //    if (addr == MAP_FAILED)
- //    {
- //    	free(shm_str), free(sem_str);
- //    	close(shm_fd);
- //    	return -1;
- //    }
-
- //    st->shm_addr = addr;
-
-
-	// sem_t *sem = sem_open(sem_str, 0);
-
-	// st->sem = sem;
-
-
-	// if (sem == SEM_FAILED)
- //    {
- //        free(shm_str), free(sem_str);
- //        close(shm_fd);
-	//     munmap(addr, CHT_SHM_SIZE);
- //        return -1;
- //    }
-
-	// status = enter_chat_loop(st);
-
-	// mq_close(st->mq_out);
-
-	// sem_close(sem);
-
-	// close(shm_fd);
-	// munmap(addr, CHT_SHM_SIZE);
-
-	// free(shm_str), free(sem_str);
-
-	// wclear(st->display);
-	// wrefresh(st->display);	
-
-	// return status;
-	return 0;
+	return status;
 }
 
 
-int enter_chat_loop(client_state_t * st)
+int enter_chat_loop(client_state_t *st, struct sockaddr_in *cht_addr)
 {
-	// int quit = FALSE;
-	// char text[CHT_TEXT_SIZE + 1];
-	// char msg_buf[CHT_MSG_SIZE];
-	// char *content;
-	// int status, has_exited = FALSE;
+	int quit = FALSE;
+	char text[CHT_MSG_SIZE + 1];
+	char msg_buf[SV_MSG_SIZE];
+	int has_exited = FALSE;
+	ssize_t status;
 
-	// st->thread_ended = FALSE;
+	st->thread_ended = FALSE;
+	st->in_chatroom = TRUE;
 
-	// st->in_chatroom = TRUE;
+	wclear(st->display);
+	wprintw(st->display, "Conectado al chatroom %s.\n", st->chat_name);
+	wprintw(st->display, "Comandos validos:.\n");
+	wprintw(st->display, "   /history   /exit\n");
+	wrefresh(st->display);
 
-	// wclear(st->display);
-	// wprintw(st->display, "Conectado al chatroom %s.\n", st->chat_name);
-	// wprintw(st->display, "Comandos validos:.\n");
-	// wprintw(st->display, "   /history   /exit\n");
-	// wrefresh(st->display);
+	/* Thread para recibir mensajes del socket */
+	pthread_create(&(st->rec_thread), NULL, read_socket_loop, st);
 
-	// /* Thread para recibir mensajes de MQ */
-	// pthread_create(&(st->rec_thread), NULL, read_mq_loop, st);
+	while (!quit)
+	{
+		pthread_mutex_lock(&st->thread_m);
+		if (st->thread_ended)
+		{
+			pthread_mutex_unlock(&st->thread_m);
+			break;
+		}
+		pthread_mutex_unlock(&st->thread_m);
 
-	// while (!quit)
-	// {
-	// 	pthread_mutex_lock(&st->thread_m);
-	// 	if (st->thread_ended)
-	// 	{
-	// 		pthread_mutex_unlock(&st->thread_m);
-	// 		break;
-	// 	}
-	// 	pthread_mutex_unlock(&st->thread_m);
+		if (has_exited)
+		{
+			continue;
+		}
 
-	// 	if (has_exited)
-	// 	{
-	// 		continue;
-	// 	}
+		fill_zeros(text, CHT_MSG_SIZE + 1);
+		read_input_ncurses(st, text, CHT_MSG_SIZE);
 
-	// 	fill_zeros(text, CHT_TEXT_SIZE + 1);
-	// 	read_input_ncurses(st, text, CHT_TEXT_SIZE);
+		pthread_mutex_lock(&st->thread_m);
+		if (st->thread_ended)
+		{
+			pthread_mutex_unlock(&st->thread_m);
+			break;
+		}
+		pthread_mutex_unlock(&st->thread_m);
 
-	// 	pthread_mutex_lock(&st->thread_m);
-	// 	if (st->thread_ended)
-	// 	{
-	// 		pthread_mutex_unlock(&st->thread_m);
-	// 		break;
-	// 	}
-	// 	pthread_mutex_unlock(&st->thread_m);
+		if (text[0] == '/')
+		{
+			if (strcmp(text, "/exit") == 0)
+			{
+				st->in_chatroom = FALSE;
+				msg_buf[0] = CHT_MSG_EXIT;
+				status = sendto(st->socket_fd, msg_buf, SV_MSG_SIZE, 0, (struct sockaddr*)cht_addr, sizeof(struct sockaddr));
+				if (status != SV_MSG_SIZE)
+				{
+					pthread_mutex_lock(&st->thread_m);
+					pthread_cancel(st->rec_thread);
+					pthread_mutex_unlock(&st->thread_m);
+					return -1;
+				}
 
-	// 	if (text[0] == '/')
-	// 	{
-	// 		if (strcmp(text, "/exit") == 0)
-	// 		{
-	// 			st->in_chatroom = FALSE;
-	// 			pack_msg(msg_buf, st->pid, CHT_MSG_EXIT);
-	// 			status = mq_send(st->mq_out, msg_buf, CHT_MSG_SIZE, 0);
-
-	// 			if (status == -1)
-	// 			{
-	// 				pthread_mutex_lock(&st->thread_m);
-	// 				pthread_cancel(st->rec_thread);
-	// 				pthread_mutex_unlock(&st->thread_m);
-	// 				return -1;
-	// 			}
-
-	// 			has_exited = TRUE;
-	// 		}
-	// 		else if (strcmp(text, "/history") == 0)
-	// 		{
-	// 			pack_msg(msg_buf, st->pid, CHT_MSG_HIST);
-	// 			status = mq_send(st->mq_out, msg_buf, CHT_MSG_SIZE, 0);
-
-	// 			if (status == -1)
-	// 			{
-	// 				pthread_mutex_lock(&st->thread_m);
-	// 				pthread_cancel(st->rec_thread);
-	// 				pthread_mutex_unlock(&st->thread_m);
-	// 				return -1;
-	// 			}
-	// 		}
-	// 		else
-	// 		{
-	// 			pthread_mutex_lock(&st->screen_m);
-	// 			wprintw(st->display, "Comando invalido.\n");
-	// 			wrefresh(st->display);
-	// 			pthread_mutex_unlock(&st->screen_m);
-	// 		}
-	// 	}
-	// 	else
-	// 	{
-	// 		content = pack_msg(msg_buf,st->pid, CHT_MSG_TEXT);
-	// 		strcpy(content, text);
-	// 		if (strlen(text) !=0)
-	// 		{
-	// 			status = mq_send(st->mq_out, msg_buf, CHT_MSG_SIZE, 0);
-	// 		}
-			
-	// 		if (status == -1)
-	// 		{
-	// 			pthread_mutex_lock(&st->thread_m);
-	// 			pthread_cancel(st->rec_thread);
-	// 			pthread_mutex_unlock(&st->thread_m);
-	// 			return -1;
-	// 		}
-
-	// 	}
-	// }
+				has_exited = TRUE;
+			}
+			else
+			{
+				pthread_mutex_lock(&st->screen_m);
+				wprintw(st->display, "Comando invalido.\n");
+				wrefresh(st->display);
+				pthread_mutex_unlock(&st->screen_m);
+			}
+		}
+		else
+		{
+			if (strlen(text) > 0)
+			{
+				msg_buf[0] = CHT_MSG_TEXT;
+				strcpy(&msg_buf[1], text);
+				status = sendto(st->socket_fd, msg_buf, SV_MSG_SIZE, 0, (struct sockaddr*)cht_addr, sizeof(struct sockaddr));
+				if (status == -1)
+				{
+					pthread_mutex_lock(&st->thread_m);
+					pthread_cancel(st->rec_thread);
+					pthread_mutex_unlock(&st->thread_m);
+					return -1;
+				}
+			}
+		}
+	}
 
 	return 0;
 }
 
-void *read_mq_loop(void *arg)
+void *read_socket_loop(void *arg)
 {
-	// char msg_buf[CHT_MSG_SIZE];
-	// char *content;
-	// int quit = FALSE;
-	// int status, i, hist_empty;
-	// pid_t pid;
-	// char code;
-	// client_state_t *st = (client_state_t*)arg;
+	char msg_buf[SV_MSG_SIZE];
+	int quit = FALSE;
+	int i;
+	ssize_t status;
+	char code, *content;
+	client_state_t *st = (client_state_t*)arg;
 	
-	// while (!quit)
-	// {
-	// 	status = mq_receive(st->mq_in, msg_buf, CHT_MSG_SIZE, NULL);
+	while (!quit)
+	{
+		status = recvfrom(st->socket_fd, msg_buf, SV_MSG_SIZE, 0, NULL, NULL);
+		if (status != SV_MSG_SIZE)
+		{
+			pthread_mutex_lock(&st->thread_m);
+			st->thread_ended = TRUE;
+			pthread_mutex_unlock(&st->thread_m);
+			return NULL;
+		}
+		
+		code = msg_buf[0];
+		content = &msg_buf[1];
 
-	// 	if (status == -1)
-	// 	{
-	// 		pthread_mutex_lock(&st->thread_m);
-	// 		st->thread_ended = TRUE;
-	// 		pthread_mutex_unlock(&st->thread_m);
-	// 		return NULL;
-	// 	}
-	// 	content = unpack_msg(msg_buf, &pid, &code);
+		switch (code)
+		{
+			case CHT_MSG_TEXT:
+				pthread_mutex_lock(&st->screen_m);
+				wprintw(st->display, "%s\n", content);
+				wrefresh(st->display);
+				pthread_mutex_unlock(&st->screen_m);
+			break;
 
-	// 	switch (code)
-	// 	{
-	// 		case CHT_MSG_TEXT:
-	// 			pthread_mutex_lock(&st->screen_m);
-	// 			wprintw(st->display, "%s\n", content);
-	// 			wrefresh(st->display);
-	// 			pthread_mutex_unlock(&st->screen_m);
-	// 		break;
+			case CHT_MSG_EXIT:
+				pthread_mutex_lock(&st->screen_m);
+				wprintw(st->display, "Saliendo de chatroom.\n");
+				wprintw(st->display, "Presione enter para cerrar la ventana de chat.\n");
+				wrefresh(st->display);
+				pthread_mutex_unlock(&st->screen_m);
 
-	// 		case CHT_MSG_HIST:
-	// 			pthread_mutex_lock(&st->screen_m);
-	// 			sem_wait(st->sem);
+				pthread_mutex_lock(&st->thread_m);
+				st->thread_ended = TRUE;
+				st->in_chatroom = FALSE;
+				pthread_mutex_unlock(&st->thread_m);
+				return NULL;
+			break;
 
-	// 			wprintw(st->display, "\n-- HISTORIAL --\n\n");
+			default:
+				pthread_mutex_lock(&st->screen_m);
+				wprintw(st->display, "Codigo invalido recibido (enter para continuar).\n");
+				wrefresh(st->display);
+				pthread_mutex_unlock(&st->screen_m);
 
-	// 			hist_empty = TRUE;
-
-	// 			for(i =0; i < CHT_HIST_SIZE; i++){
-
-	// 				if(strlen(st->shm_addr + (i * CHT_MSG_SIZE)) != 0 )
-	// 				{
-	// 					hist_empty = FALSE; 
-	// 					wprintw(st->display, "%d: %s\n", i + 1 ,st->shm_addr + (i * CHT_MSG_SIZE));
-	// 				}
-	// 			}
-
-	// 			if (hist_empty)
-	// 			{
-	// 				wprintw(st->display, "El historial se encuentra vacio \n");
-	// 			}
-
-
-	// 			wprintw(st->display, "\n---------------\n\n");
-
-	// 			wrefresh(st->display);
-
-	// 			sem_post(st->sem);
-	// 			pthread_mutex_unlock(&st->screen_m);
-	// 		break;
-
-	// 		case CHT_MSG_EXIT:
-	// 			pthread_mutex_lock(&st->screen_m);
-	// 			wprintw(st->display, "Saliendo de chatroom.\n");
-	// 			wprintw(st->display, "Presione enter para cerrar la ventana de chat.\n");
-	// 			wrefresh(st->display);
-	// 			pthread_mutex_unlock(&st->screen_m);
-
-	// 			pthread_mutex_lock(&st->thread_m);
-	// 			st->thread_ended = TRUE;
-	// 			st->in_chatroom = FALSE;
-	// 			pthread_mutex_unlock(&st->thread_m);
-	// 			return NULL;
-	// 		break;
-
-	// 		default:
-
-	// 		break;
-	// 	}
-	// }	
+				pthread_mutex_lock(&st->thread_m);
+				st->thread_ended = TRUE;
+				st->in_chatroom = FALSE;
+				pthread_mutex_unlock(&st->thread_m);
+				return NULL;
+			break;
+		}
+	}	
 
 	return NULL;
 }
