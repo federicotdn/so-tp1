@@ -54,9 +54,9 @@ static void exit_cleanup(int sig);
 static int start_server(server_state_t *svstate);
 static int login_user(server_state_t *svstate, struct sockaddr_in *cl, char *msg);
 static int join_user(server_state_t *svstate);
-static int exit_user(server_state_t *svstate);
+static int exit_user(server_state_t *svstate, struct sockaddr_in *cl);
 static int create_chatroom(server_state_t *svstate);
-static void remove_user(server_state_t *svstate, pid_t pid);
+static void remove_user(server_state_t *svstate, struct sockaddr_in *cl);
 static int send_login_response(server_state_t *sv_state, struct sockaddr_in *cl, int code, enum db_type_code type);
 static client_t *sv_add_user(server_state_t *svstate, char *username, struct sockaddr_in *addr, enum db_type_code type);
 static int user_logged(server_state_t *svstate, char *username);
@@ -192,7 +192,7 @@ int start_server(server_state_t *svstate)
 
 			case SV_EXIT_REQ:
 
-				status = exit_user(svstate);
+				status = exit_user(svstate, sender_addr);
 				if (status == -1)
 				{
 					error = TRUE;
@@ -483,7 +483,6 @@ int login_user(server_state_t *sv_state, struct sockaddr_in *cl, char *msg)
 
 int send_login_response(server_state_t *sv_state, struct sockaddr_in *cl, int code, enum db_type_code type)
 {
-	int res_type = SV_LOGIN_RES;
 	char buf[SV_MSG_SIZE];
 	buf[0] = SV_LOGIN_RES;
 	buf[1] = (char)code;
@@ -536,22 +535,15 @@ int user_logged(server_state_t *svstate, char *username)
 	return FALSE;
 }
 
-int exit_user(server_state_t *svstate)
+int exit_user(server_state_t *svstate, struct sockaddr_in *cl)
 {
-	// struct sv_exit_req req;
-	// int status = read(svstate->fifo_in, &req, sizeof(struct sv_exit_req));
-	// if (status != sizeof(struct sv_exit_req))
-	// {
-	// 	return -1;
-	// }
-
-	// printf("Server: usuario PID: %u termino la sesion.\n", req.pid);
-	// remove_user(svstate, req.pid);
+	printf("Server: usuario IP: %s termino la sesion.\n", inet_ntoa(cl->sin_addr));
+	remove_user(svstate, cl);
 
 	return 0;
 }
 
-void remove_user(server_state_t *svstate, pid_t pid)
+void remove_user(server_state_t *svstate, struct sockaddr_in *cl)
 {
 	client_t *aux = svstate->list_head;
 
@@ -560,13 +552,13 @@ void remove_user(server_state_t *svstate, pid_t pid)
 		return;
 	}
 	
-	if (aux->pid == pid)
+	if (aux->addr.sin_addr.s_addr == cl->sin_addr.s_addr)
 	{
 		svstate->list_head = aux->next;
 		free(aux->username);
 		free(aux);
 
-		printf("--> PID: %u eliminado.\n", pid);
+		printf("--> IP %s eliminado.\n", inet_ntoa(cl->sin_addr));
 
 		return;
 	}
@@ -574,13 +566,13 @@ void remove_user(server_state_t *svstate, pid_t pid)
 	while (aux->next != NULL)
 	{
 		client_t *next = aux->next;
-		if (next->pid == pid)
+		if (next->addr.sin_addr.s_addr == cl->sin_addr.s_addr)
 		{
 			aux->next = next->next;
 			free(next->username);
 			free(next);
 
-			printf("--> PID: %u eliminado.\n", pid);
+			printf("--> IP %s eliminado.\n", inet_ntoa(cl->sin_addr));
 
 			return;
 		}
