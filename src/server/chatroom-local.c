@@ -203,6 +203,8 @@ int start_chatroom(chatroom_state_t *st)
 					quit = TRUE;;
 					break;
 				}
+
+				pack_msg(msg_buf, st->pid, CHT_MSG_JOIN);
 				status = mq_send((st->head)->mq, msg_buf ,CHT_MSG_SIZE, 0);
 				if (status == -1)
 				{
@@ -230,14 +232,6 @@ int start_chatroom(chatroom_state_t *st)
 				strcat(new_content, content);
 
 				push_message(st->history, new_content);
-				iter_reset(st->history);
-
-				while ((hist_txt = iter_next(st->history)) != NULL) 
-				{
-					printf("hist: %s\n", hist_txt);
-				}
-
-				printf("------------------------------------------------------------------\n");
 
 				send_text_to_all(st, new_content);
 
@@ -262,6 +256,17 @@ int start_chatroom(chatroom_state_t *st)
 				}
 
 				sem_post(st->sem);
+
+				client = get_client(st->head, sender_pid);
+				status = mq_send(client->mq, msg_buf ,CHT_MSG_SIZE, 0);
+				if (status == -1)
+				{
+					quit = TRUE;;
+					break;
+				}
+
+
+
 			break;
 
 			case CHT_MSG_EXIT:

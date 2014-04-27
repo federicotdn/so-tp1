@@ -2,7 +2,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <semaphore.h>
+#include <fcntl.h>
+
 #include "protocol.h"
+#include "file.h"
 
 char *gen_name(pid_t pid, char *prefix, int size);
 
@@ -47,14 +50,16 @@ char *gen_name(pid_t pid, char *prefix, int size)
 
 int write_server(int fd, void *req_struct, size_t req_size, int req_type)
 {
-    sem_t *sem = sem_open(SERVER_SEMAPHORE, 0);
+    
     int status;
     
-    if (sem == SEM_FAILED)
+    status = get_file_lock(fd, F_WRLCK);
+
+    if (status == -1)
     {
         return -1;
     }
-    sem_wait(sem);
+    
     
     status = write(fd, &req_type, sizeof(int));
 	if (status != sizeof(int))
@@ -68,8 +73,11 @@ int write_server(int fd, void *req_struct, size_t req_size, int req_type)
 		return -1;
 	}
 
-    sem_post(sem);
-    sem_close(sem);
+    status = unlock_file(fd);
+    if (status == -1)
+    {
+        return -1;
+    }
     
     return 0;
 }
@@ -91,5 +99,6 @@ char *unpack_msg(char *msg_buf, pid_t *pid, char *code)
     *code = *ptr++;
     return ptr;
 }
+
     
     

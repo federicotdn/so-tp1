@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <semaphore.h>
+#include <mqueue.h>
 
 #include "server-local.h"
 #include "chatroom-local.h"
@@ -208,7 +209,6 @@ int remove_chatroom(server_state_t *svstate)
 	{
 		svstate->chat_head = aux->next;
 		free(aux->name);
-		mq_close(aux->mq_name);
 		free(aux);
 
 		printf("--> PID: %u chatroom eliminado.\n", cht_pid);
@@ -223,7 +223,6 @@ int remove_chatroom(server_state_t *svstate)
 		{
 			aux->next = next->next;
 			free(next->name);
-			mq_close(next->mq_name);
 			free(next);
 
 			printf("--> PID: %u chatroom eliminado.\n", cht_pid);

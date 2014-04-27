@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
+#include "file.h"
 
 #define TRUE 1
 #define FALSE 0
@@ -56,18 +57,27 @@ struct db_handle *open_db(char *filename)
 	return db;
 }
 
+
+
 int get_db_lock(struct db_handle *db)
 {
 	if (db == NULL)
 	{
 		return -1;
 	}
-
-	/* Exclusive lock on whole file */
-	struct flock lck = create_lock(F_WRLCK);
 	int fd = fileno(db->file);
+	return get_file_lock(fd, F_WRLCK);
+}
 
-	return fcntl(fd, F_SETLKW, &lck);
+
+int get_db_read_lock(struct db_handle *db)
+{
+	if (db == NULL)
+	{
+		return -1;
+	}
+	int fd = fileno(db->file);
+	return get_file_lock(fd, F_RDLCK);
 }
 
 int unlock_db(struct db_handle *db)
@@ -78,11 +88,11 @@ int unlock_db(struct db_handle *db)
 	}
 
 	/* Remove lock for file */
-	struct flock lck = create_lock(F_UNLCK);
 	int fd = fileno(db->file);
-
-	return fcntl(fd, F_SETLKW, &lck);
+	return unlock_file(fd);
 }
+
+
 
 int close_db(struct db_handle *db)
 {
@@ -129,14 +139,15 @@ int db_add_user(struct db_handle *db, char *username, char *password, enum db_ty
 		return -1;
 	}
 
-	if (db_user_exists(db, user))
+	int status = db_user_exists(db, user);
+	if (status || status == -1)
 	{
 		free(user);
 		return -1;
 	}
 
 	fseek(db->file, 0, SEEK_END);
-	int status = write_user_db(db, user);
+	status = write_user_db(db, user);
 
 	free(user);
 
@@ -199,6 +210,12 @@ int write_user_db(struct db_handle *db, struct db_user *user)
 int db_user_exists(struct db_handle *db, struct db_user *user)
 {
 	struct db_user *head = parse_db_users(db);
+
+	if (head == NULL)
+	{
+		return -1;
+	}
+
 	struct db_user *aux = head;
 
 	while (aux != NULL)
@@ -221,6 +238,12 @@ struct db_user *parse_db_users(struct db_handle *db)
 	char buf[DB_MAX_USERLEN + DB_MAX_PASSLEN + DB_MAX_USERTYPE_NAME + 3];
 	int read = 0, end = FALSE;
 	struct db_user *user_list = NULL;
+
+	int status = get_db_read_lock(db);
+	if (status == -1)
+	{
+		return NULL;
+	}
 
 	fseek(db->file, 0, SEEK_SET);
 
@@ -246,6 +269,13 @@ struct db_user *parse_db_users(struct db_handle *db)
 			}
 		}
 
+	}
+
+	status = unlock_db(db);
+	if (status == -1)
+	{
+		
+		return NULL;
 	}
 
 	return user_list;
@@ -317,6 +347,12 @@ enum db_type_code db_check_login(struct db_handle *db, char *username, char *pas
 	}
 
 	struct db_user *head = parse_db_users(db);
+
+	if (head == NULL)
+	{
+		return -1;
+	}
+
 	struct db_user *aux = head;
 	while (aux != NULL)
 	{
@@ -349,13 +385,4 @@ int match_credentials(struct db_user *user, char *name, char *pass)
 	return TRUE;
 }
 
-struct flock create_lock(short int type)
-{
-	struct flock lck;
-	lck.l_type = type;
-	lck.l_whence = SEEK_SET;
-	lck.l_start = 0;
-	lck.l_len = 0;
-	lck.l_pid = getpid();
-	return lck;
-}
+

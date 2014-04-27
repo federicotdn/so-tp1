@@ -4,7 +4,7 @@ CP = cp -f
 CFLAGS = -Wall -I../common -g
 LFLAGS = -lpthread -lncurses -lrt
 OBJDIR = obj
-OBJECTS = main.o dbaccess.o client-local.o protocol.o
+OBJECTS = main.o dbaccess.o client-local.o protocol.o file.o
 TARGET = client
 
 ${TARGET}: ${OBJECTS}
@@ -22,6 +22,9 @@ dbaccess.o: ../common/dbaccess.c ../common/dbaccess.h
 
 protocol.o: ../common/protocol.c ../common/protocol.h
 	${CC} -c ../common/protocol.c ${CFLAGS}
+
+file.o: ../common/file.c ../common/file.h
+	${CC} -c ../common/file.c ${CFLAGS}
 
 clean:
 	${RM} ${OBJECTS} ${TARGET}
