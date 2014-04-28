@@ -1,4 +1,5 @@
-bin/
+posix/bin/
+sysv/bin/
 
 # Object files
 *.o
