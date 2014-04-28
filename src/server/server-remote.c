@@ -624,6 +624,7 @@ void exit_cleanup(int sig)
 		printf("\nServer: SIGINT recibido. Exit.\n");
 		close_db(gbl_state->db);
 		free_sv_users(gbl_state->list_head);
+		close(gbl_state->socket_fd);
 
 		exit(0);
 	}
