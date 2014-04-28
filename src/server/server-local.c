@@ -690,12 +690,6 @@ void exit_cleanup(int sig)
 			return;
 		}
 
-		if (gbl_state->chat_count == 0)
-		{
-			warned = FALSE;
-			return;
-		}
-
 		printf("\nServer: SIGINT recibido. Exit.\n");
 		close_db(gbl_state->db);
 		free_sv_users(gbl_state->list_head);
