@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
 
 		unsigned short port;
 
-		if (!sscanf(argv[3], "%u", &port))
+		if (!sscanf(argv[3], "%hu", &port))
 		{
 			return 1;
 		}

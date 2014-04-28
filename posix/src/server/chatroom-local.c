@@ -349,11 +349,8 @@ int exit_all_users(client_t *head, char *msg_buf)
 
 int send_text_to_all(chatroom_state_t *st, char *text)
 {
-	client_t *aux = st->head;
 	char msg_buf[CHT_MSG_SIZE];
 	char *content;
-	int status;
-
 	content = pack_msg(msg_buf, 0, CHT_MSG_TEXT);
 	strcpy(content, text);
 

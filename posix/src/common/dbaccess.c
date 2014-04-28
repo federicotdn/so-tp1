@@ -138,13 +138,13 @@ int db_add_user(struct db_handle *db, char *username, char *password, enum db_ty
 	{
 		return -1;
 	}
-
 	int status = db_user_exists(db, user);
 	if (status || status == -1)
 	{
 		free(user);
 		return -1;
 	}
+
 
 	fseek(db->file, 0, SEEK_END);
 	status = write_user_db(db, user);
@@ -211,11 +211,6 @@ int db_user_exists(struct db_handle *db, struct db_user *user)
 {
 	struct db_user *head = parse_db_users(db);
 
-	if (head == NULL)
-	{
-		return -1;
-	}
-
 	struct db_user *aux = head;
 
 	while (aux != NULL)
@@ -240,6 +235,7 @@ struct db_user *parse_db_users(struct db_handle *db)
 	struct db_user *user_list = NULL;
 
 	int status = get_db_read_lock(db);
+
 	if (status == -1)
 	{
 		return NULL;

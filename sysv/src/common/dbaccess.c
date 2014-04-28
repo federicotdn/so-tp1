@@ -210,12 +210,6 @@ int write_user_db(struct db_handle *db, struct db_user *user)
 int db_user_exists(struct db_handle *db, struct db_user *user)
 {
 	struct db_user *head = parse_db_users(db);
-
-	if (head == NULL)
-	{
-		return -1;
-	}
-
 	struct db_user *aux = head;
 
 	while (aux != NULL)

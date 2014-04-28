@@ -210,7 +210,7 @@ int remove_chatroom(server_state_t *svstate)
 		free(aux->name);
 		free(aux);
 
-		printf("--> PID: %u chatroom eliminado.\n", cht_pid);
+		printf("--> PID: %zu chatroom eliminado.\n", cht_pid);
 
 		return 0;
 	}
@@ -224,7 +224,7 @@ int remove_chatroom(server_state_t *svstate)
 			free(next->name);
 			free(next);
 
-			printf("--> PID: %u chatroom eliminado.\n", cht_pid);
+			printf("--> PID: %zu chatroom eliminado.\n", cht_pid);
 
 			return 0;
 		}
@@ -693,7 +693,7 @@ void exit_cleanup(int sig)
 		printf("\nServer: SIGINT recibido. Exit.\n");
 		close_db(gbl_state->db);
 		free_sv_users(gbl_state->list_head);
-		//free_sv_chats(gbl_state->chat_head);
+		free_sv_chats(gbl_state->chat_head);
 		close(gbl_state->fifo_in);
 		unlink(SERVER_FIFO_IN);
 		sem_unlink(SERVER_SEMAPHORE);

@@ -40,7 +40,6 @@ static client_t *get_client(client_t *head, struct sockaddr_in *cl);
 
 int init_chatroom_remote(char *name, char *ip, port_t port, struct in_addr creator, struct sockaddr_in sv_addr)
 {
-	int status;
 	chatroom_state_t state;
 	state.new = TRUE;
 	state.creator = creator;
@@ -66,7 +65,7 @@ int init_chatroom_remote(char *name, char *ip, port_t port, struct in_addr creat
 
 	printf("Chatroom puerto %u: listo.\n", port);
 
-	status = start_chatroom(&state);
+	start_chatroom(&state);
 
 	close(state.socket_fd);
 
@@ -103,7 +102,6 @@ int setup_sockets(chatroom_state_t *st, char *ip, port_t port)
 int start_chatroom(chatroom_state_t *st)
 {
 	char buf[SV_MSG_SIZE];
-	char *content;
 	int quit = FALSE;
 	ssize_t status;
 	char new_content[CHT_MSG_SIZE];
@@ -262,8 +260,6 @@ int send_text_to_all(chatroom_state_t *st, char *text)
 {
 	char msg_buf[SV_MSG_SIZE];
 	char *content = msg_buf;
-	int status;
-
 	*content++ = CHT_MSG_TEXT;
 	strcpy(content, text);
 

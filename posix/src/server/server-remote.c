@@ -570,7 +570,6 @@ void free_sv_chats(chatroom_t *head)
 	    chatroom_t *aux = head;
 	    head = head->next;
 	    free(aux->name);
-	   // free(aux->mq_name);
 	    free(aux);
 	}
 }
@@ -624,6 +623,7 @@ void exit_cleanup(int sig)
 		printf("\nServer: SIGINT recibido. Exit.\n");
 		close_db(gbl_state->db);
 		free_sv_users(gbl_state->list_head);
+		free_sv_chats(gbl_state->chat_head);
 		close(gbl_state->socket_fd);
 
 		exit(0);

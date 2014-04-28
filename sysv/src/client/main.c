@@ -16,7 +16,6 @@ int main(int argc, char *argv[])
 	if (status != 0)
 	{
 		printf("Usuario invalido.\n");
-		endwin();
 		return 1;
 	}
 
@@ -25,7 +24,6 @@ int main(int argc, char *argv[])
 	if (status != 0)
 	{
 		printf("Clave invalida.\n");
-		endwin();
 		return 1;
 	}
 
@@ -42,7 +40,6 @@ int main(int argc, char *argv[])
 	if (status == ERROR_SERVER_CONNECTION)
 	{
 		printf("Error de comunicacion con el servidor.\n");
-		endwin();
 		return -1;
 	}
 	

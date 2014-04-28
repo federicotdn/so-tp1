@@ -105,12 +105,14 @@ int init_client_local(char *username, char *password)
 
 	if (state.mq_in == -1)
 	{
+		endwin();
 		return ERROR_OTHER;
 	}
 
 	char *fifo_str = gen_client_fifo_str(state.pid);
 	if (fifo_str == NULL)
 	{
+		endwin();
 		return ERROR_OTHER;
 	}
 	
@@ -118,6 +120,7 @@ int init_client_local(char *username, char *password)
 	if (mkfifo(fifo_str, S_IRUSR | S_IWUSR | S_IWGRP) == -1)
 	{
 		free(fifo_str);
+		endwin();
 		return ERROR_FIFO_CREAT;
 	}
 
@@ -128,6 +131,7 @@ int init_client_local(char *username, char *password)
 	if (state.sv_fifo == -1)
 	{
 		free(fifo_str);
+		endwin();
 		return ERROR_SERVER_CONNECTION;
 	}
 
@@ -135,6 +139,7 @@ int init_client_local(char *username, char *password)
 	if (status == ERROR_SV_SEND)
 	{
 		free(fifo_str);
+		endwin();
 		return ERROR_SV_SEND;
 	}
 
@@ -145,6 +150,7 @@ int init_client_local(char *username, char *password)
 	if (state.in_fifo == -1)
 	{
 		free(fifo_str);
+		endwin();
 		return ERROR_FIFO_OPEN;
 	}
 
@@ -152,6 +158,7 @@ int init_client_local(char *username, char *password)
 	if (status == -1)
 	{
 		free(fifo_str);
+		endwin();
 		return ERROR_SV_READ;
 	}
 
@@ -160,10 +167,12 @@ int init_client_local(char *username, char *password)
 		free(fifo_str);
 		if (status == SV_LOGIN_ERROR_CRD)
 		{
+			endwin();
 			return ERROR_SV_CREDENTIALS;
 		}
 		if (status == SV_LOGIN_ERROR_ACTIVE)
 		{
+			endwin();
 			return ERROR_SV_USER_ACTIVE;
 		}
 	}

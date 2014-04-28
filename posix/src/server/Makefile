@@ -1,7 +1,7 @@
 CC = gcc
 RM = rm -f
 CP = cp -f
-CFLAGS = -Wall -I../common -g
+CFLAGS = -Wall -I../common -g 
 LFLAGS = -lpthread -lrt
 OBJDIR = obj
 OBJECTS = main.o dbaccess.o server-local.o protocol.o chatroom-local.o msg_text_q.o file.o server-remote.o chatroom-remote.o

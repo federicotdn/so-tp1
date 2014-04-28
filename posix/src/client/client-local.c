@@ -93,6 +93,7 @@ int init_client_local(char *username, char *password)
 
 	if (mq_name == NULL)
 	{
+		endwin();
 		return ERROR_OTHER;
 	}
 
