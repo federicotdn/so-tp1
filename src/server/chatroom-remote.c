@@ -136,7 +136,7 @@ int start_chatroom(chatroom_state_t *st)
 
 		if (code != CHT_MSG_TEXT)
 		{
-			printf("Chatroom %s: msg codigo %d recibido.\n", st->name, (int)code);
+			printf("\nChatroom %s: msg codigo %d recibido.\n", st->name, (int)code);
 		}
 		
 		switch (code)
