@@ -240,7 +240,7 @@ int remove_chatroom(server_state_t *svstate, char *msg)
 		free(aux);
 
 		printf("--> puerto: %u chatroom eliminado.\n", port);
-
+		svstate->chat_count--;
 		return 0;
 	}
 
@@ -254,14 +254,12 @@ int remove_chatroom(server_state_t *svstate, char *msg)
 			free(next);
 
 			printf("--> puerto: %u chatroom eliminado.\n", port);
-
+			svstate->chat_count--;
 			return 0;
 		}
 
 		aux = aux->next;
 	}
-
-	svstate->chat_count--;
 
 	return 0;
 }

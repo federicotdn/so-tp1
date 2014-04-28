@@ -208,7 +208,7 @@ int start_chatroom(chatroom_state_t *st)
 					status = exit_all_users(st->socket_fd, st->head, buf);
 
 					buf[0] = SV_DESTROY_REQ;
-					memcpy(&buf[1], st->port, sizeof(port_t));
+					memcpy(&buf[1], &st->port, sizeof(port_t));
 					status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)st->sv_addr, sizeof(struct sockaddr_in));
 					printf("Cerrando chatroom.\n");
 
