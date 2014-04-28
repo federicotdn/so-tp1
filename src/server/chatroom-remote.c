@@ -23,6 +23,7 @@ typedef struct chatroom_state {
 	struct in_addr creator;
 	int new;
 	client_t *head;
+	port_t port;
 
 	struct sockaddr_in *sv_addr;
 	int socket_fd;
@@ -44,6 +45,7 @@ int init_chatroom_remote(char *name, char *ip, port_t port, struct in_addr creat
 	state.new = TRUE;
 	state.creator = creator;
 	state.head = NULL;
+	state.port = port;
 	state.sv_addr = &sv_addr;
 
 	if (signal(SIGINT, SIG_IGN) == SIG_ERR)
@@ -206,6 +208,7 @@ int start_chatroom(chatroom_state_t *st)
 					status = exit_all_users(st->socket_fd, st->head, buf);
 
 					buf[0] = SV_DESTROY_REQ;
+					memcpy(&buf[1], st->port, sizeof(port_t));
 					status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)st->sv_addr, sizeof(struct sockaddr_in));
 					printf("Cerrando chatroom.\n");
 

@@ -58,7 +58,7 @@ static void remove_user(server_state_t *svstate, struct sockaddr_in *cl);
 static int send_login_response(server_state_t *sv_state, struct sockaddr_in *cl, int code, enum db_type_code type);
 static client_t *sv_add_user(server_state_t *svstate, char *username, struct sockaddr_in *addr, enum db_type_code type);
 static int user_logged(server_state_t *svstate, char *username);
-static int remove_chatroom(server_state_t *svstate);
+static int remove_chatroom(server_state_t *svstate, char *msg);
 
 static server_state_t *gbl_state = NULL;
 
@@ -201,9 +201,8 @@ int start_server(server_state_t *svstate)
 			break;
 
 			case SV_DESTROY_REQ:
-				printf("DESTROY REQ\n");
 
-				status = remove_chatroom(svstate);
+				status = remove_chatroom(svstate, content);
 				if (status == -1)
 				{
 					error = TRUE;
@@ -221,54 +220,48 @@ int start_server(server_state_t *svstate)
 }
 
 
-int remove_chatroom(server_state_t *svstate)
+int remove_chatroom(server_state_t *svstate, char *msg)
 {
-	// struct sv_destroy_cht_req req;
-	// int status = read(svstate->fifo_in, &req, sizeof(struct sv_destroy_cht_req));
+	port_t port;
+	memcpy(&port, msg, sizeof(port_t));
+	printf("Server: eliminar chatroom puerto: %u.\n", port);
 
-	// if (status != sizeof(struct sv_destroy_cht_req))
-	// {
-	// 	return -1;
-	// }
+	chatroom_t *aux = svstate->chat_head;
 
-	// size_t cht_pid = req.pid;
+	if (aux == NULL)
+	{
+		return -1;
+	}
 
-	// chatroom_t *aux = svstate->chat_head;
+	if (aux->port == port)
+	{
+		svstate->chat_head = aux->next;
+		free(aux->name);
+		free(aux);
 
-	// if (aux == NULL)
-	// {
-	// 	return -1;
-	// }
+		printf("--> puerto: %u chatroom eliminado.\n", port);
 
-	// if (aux->pid == cht_pid)
-	// {
-	// 	svstate->chat_head = aux->next;
-	// 	free(aux->name);
-	// 	free(aux);
+		return 0;
+	}
 
-	// 	printf("--> PID: %u chatroom eliminado.\n", cht_pid);
+	while (aux->next != NULL)
+	{
+		chatroom_t *next = aux->next;
+		if (next->port == port)
+		{
+			aux->next = next->next;
+			free(next->name);
+			free(next);
 
-	// 	return 0;
-	// }
+			printf("--> puerto: %u chatroom eliminado.\n", port);
 
-	// while (aux->next != NULL)
-	// {
-	// 	chatroom_t *next = aux->next;
-	// 	if (next->pid == cht_pid)
-	// 	{
-	// 		aux->next = next->next;
-	// 		free(next->name);
-	// 		free(next);
+			return 0;
+		}
 
-	// 		printf("--> PID: %u chatroom eliminado.\n", cht_pid);
+		aux = aux->next;
+	}
 
-	// 		return 0;
-	// 	}
-
-	// 	aux = aux->next;
-	// }
-
-	// svstate->chat_count--;
+	svstate->chat_count--;
 
 	return 0;
 }
