@@ -17,9 +17,6 @@ main.o: main.c
 file.o: ../common/file.c ../common/file.h
 	${CC} -c ../common/file.c ${CFLAGS}
 
-dbaccess.o: ../common/dbaccess.c ../common/dbaccess.h
-	${CC} -c ../common/dbaccess.c ${CFLAGS}
-
 protocol.o: ../common/protocol.c ../common/protocol.h
 	${CC} -c ../common/protocol.c ${CFLAGS}
 

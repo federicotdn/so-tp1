@@ -11,6 +11,13 @@
 #include <semaphore.h>
 #include <sys/mman.h>
 #include <signal.h>
+#include <sys/ipc.h>
+#include <sys/types.h>
+#include <sys/msg.h>
+#include <sys/stat.h>
+#include <sys/sem.h>
+#include <sys/shm.h>
+
 
 
 #include "client-local.h"
@@ -30,10 +37,12 @@ struct client_state {
 	char *chat_name;
 	enum db_type_code type;
 	pid_t pid;
-	mqd_t mq_in;
-	mqd_t mq_out;
-	sem_t *sem;
+	int mq_in;
+	int mq_out;
+	int sem;
 	void *shm_addr;
+	int mq_key;
+	int shm;
 
 
 	/* ncurses */
@@ -49,13 +58,13 @@ struct client_state {
 };
 
 int start_client(client_state_t *st);
-int enter_chat_mode(client_state_t *st, char *mq_name);
+int enter_chat_mode(client_state_t *st, int key);
 enum db_type_code read_server_login(int fifo, int *status);
 int send_server_login(client_state_t *st, char *password);
 int send_server_exit(client_state_t *st);
 int send_server_create(client_state_t *st, char *name);
 int send_server_join(client_state_t *st, char *name);
-int read_create_join_res(client_state_t *st, char *buf);
+int read_create_join_res(client_state_t *st, int *key);
 int get_usr_command(client_state_t *st, char *cht_name);
 int init_ncurses(client_state_t *st);
 int read_input_ncurses(client_state_t *st, char *buf, size_t max_length);
@@ -89,41 +98,26 @@ int init_client_local(char *username, char *password)
 		return ERROR_OTHER;
 	}
 
-	char *mq_name = gen_mq_name_str(state.pid);
+	int key = msgget(IPC_PRIVATE, S_IRUSR | S_IWUSR);
 
-	if (mq_name == NULL)
-	{
-		return ERROR_OTHER;
-	}
-
-	struct mq_attr attr;
-	attr.mq_maxmsg = CHT_MSG_Q_COUNT;
-	attr.mq_msgsize = CHT_MSG_SIZE;
-
-	state.mq_in = mq_open(mq_name, O_CREAT | O_RDONLY, S_IRUSR | S_IWUSR | S_IWGRP, &attr);
-
+	state.mq_key = key;
+	state.mq_in = msgget(key, IPC_CREAT | S_IRUSR | S_IWUSR);
 
 	if (state.mq_in == -1)
 	{
-		free(mq_name);
-		endwin();
 		return ERROR_OTHER;
 	}
 
 	char *fifo_str = gen_client_fifo_str(state.pid);
 	if (fifo_str == NULL)
 	{
-		free(mq_name);
-		endwin();
 		return ERROR_OTHER;
 	}
 	
 	unlink(fifo_str);
 	if (mkfifo(fifo_str, S_IRUSR | S_IWUSR | S_IWGRP) == -1)
 	{
-		free(mq_name);
 		free(fifo_str);
-		endwin();
 		return ERROR_FIFO_CREAT;
 	}
 
@@ -133,18 +127,14 @@ int init_client_local(char *username, char *password)
 	state.sv_fifo = open(SERVER_FIFO_IN, O_WRONLY);
 	if (state.sv_fifo == -1)
 	{
-		free(mq_name);
 		free(fifo_str);
-		endwin();
 		return ERROR_SERVER_CONNECTION;
 	}
 
 	status = send_server_login(&state, password);
 	if (status == ERROR_SV_SEND)
 	{
-		free(mq_name);
 		free(fifo_str);
-		endwin();
 		return ERROR_SV_SEND;
 	}
 
@@ -154,33 +144,26 @@ int init_client_local(char *username, char *password)
 	state.in_fifo = open(fifo_str, O_RDONLY);
 	if (state.in_fifo == -1)
 	{
-		free(mq_name);
 		free(fifo_str);
-		endwin();
 		return ERROR_FIFO_OPEN;
 	}
 
 	enum db_type_code code = read_server_login(state.in_fifo, &status);
 	if (status == -1)
 	{
-		free(mq_name);
 		free(fifo_str);
-		endwin();
 		return ERROR_SV_READ;
 	}
 
 	if (status != SV_LOGIN_SUCCESS)
 	{
-		free(mq_name);
 		free(fifo_str);
 		if (status == SV_LOGIN_ERROR_CRD)
 		{
-			endwin();
 			return ERROR_SV_CREDENTIALS;
 		}
 		if (status == SV_LOGIN_ERROR_ACTIVE)
 		{
-			endwin();
 			return ERROR_SV_USER_ACTIVE;
 		}
 	}
@@ -190,15 +173,17 @@ int init_client_local(char *username, char *password)
 
 	status = start_client(&state);
 
+	send_server_exit(&state);
+
 	close(state.sv_fifo);
 	close(state.in_fifo);
 	unlink(fifo_str);
-	mq_close(state.mq_in);
-	mq_close(state.mq_out);
-	mq_unlink(mq_name);
-	free(mq_name);
-	free(fifo_str);
 
+	free(fifo_str);
+	msgctl(state.mq_in, IPC_RMID, NULL);
+	semctl(state.sem,0 ,IPC_RMID ,NULL);
+	shmctl(state.shm, IPC_RMID, NULL);
+	shmdt(state.shm_addr);
 	wprintw(state.display, "Presionar ENTER para salir.");
 	wrefresh(state.display);
 	wgetch(state.input);
@@ -235,8 +220,7 @@ int init_ncurses(client_state_t *st)
 int start_client(client_state_t *st)
 {
 	char cht_name[CHT_MAX_NAME_LEN + 1];
-	char mq_name[CHT_MAX_MQ_NAME + 1];
-	int cmd, status = 0, quit = FALSE;
+	int cmd, key, status = 0, quit = FALSE;
 
 	while (!quit)
 	{
@@ -261,13 +245,13 @@ int start_client(client_state_t *st)
 					wrefresh(st->display);
 				}
 
-				status = read_create_join_res(st, mq_name);
+				status = read_create_join_res(st, &key);
 				if (status == 0)
 				{
-					wprintw(st->display, "--> mq_name: %s.\n", cht_name, mq_name);
+					wprintw(st->display, "--> mq_key: %d.\n", cht_name, key);
 					wrefresh(st->display);			
 					st->chat_name = strdup(cht_name);
-					status = enter_chat_mode(st, mq_name);
+					status = enter_chat_mode(st, key);
 					if (status != 0)
 					{
 						wprintw(st->display, "Error al entrar modo chat.\n");
@@ -296,13 +280,13 @@ int start_client(client_state_t *st)
 					break;
 				}
 
-				status = read_create_join_res(st, mq_name);
+				status = read_create_join_res(st, &key);
 				if (status == 0)
 				{
-					wprintw(st->display, "Chatroom creado.  Uniendo... (mq_name: %s)\n", mq_name);
+					wprintw(st->display, "Chatroom creado.  Uniendo... (mq_key: %d)\n", key);
 					wrefresh(st->display);
 					st->chat_name = strdup(cht_name);
-					status = enter_chat_mode(st, mq_name);
+					status = enter_chat_mode(st, key);
 					if (status != 0)
 					{
 						wprintw(st->display, "Error al entrar modo chat.\n");
@@ -330,18 +314,16 @@ int start_client(client_state_t *st)
 	return status;
 }
 
-int enter_chat_mode(client_state_t *st, char *mq_name)
+int enter_chat_mode(client_state_t *st, int key)
 {
-	char msg_buf[CHT_MSG_SIZE];
-	char *content, *sem_str, *shm_str;
-	int status;
-	pid_t pid;
-	char code;
 
-	struct mq_attr attr;
-	attr.mq_maxmsg = CHT_MSG_Q_COUNT;
-	attr.mq_msgsize = CHT_MSG_SIZE;
-	st->mq_out = mq_open(mq_name, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IWGRP, &attr);
+	char *sem_str, *shm_str;
+	int status,sem_key, shm_key;
+	pid_t pid;
+	msg_t msg;
+	char *content;
+
+	st->mq_out = msgget(key, IPC_CREAT | S_IRUSR | S_IWUSR);
 
 	if (st->mq_out == -1)
 	{
@@ -350,96 +332,64 @@ int enter_chat_mode(client_state_t *st, char *mq_name)
 		return -1;
 	}
 
-	wprintw(st->display, "Chatroom MQ abierto.\n", mq_name);
+	wprintw(st->display, "Chatroom MQ abierto.\n");
 	wrefresh(st->display);
 
-	content = pack_msg(msg_buf, st->pid, CHT_MSG_JOIN);
+	content = pack_content(msg.mtext, st->mq_key);
 	strcpy(content, st->username);
 
-	status = mq_send(st->mq_out, msg_buf, CHT_MSG_SIZE, 0);
+	pack_msg(&msg, st->pid, CHT_MSG_JOIN);
+
+	status = msgsnd(st->mq_out, &msg, CHT_TEXT_SIZE + 1, 0);
+
+
+	if (status == -1)
+	{
+		return -1;
+	}
+	status = msgrcv(st->mq_in, &msg, CHT_TEXT_SIZE + 1, 0, 0);
 
 	if (status == -1)
 	{
 		return -1;
 	}
 
-	status = mq_receive(st->mq_in, msg_buf, CHT_MSG_SIZE, NULL);
 
-	if (status == -1)
+
+	if (msg.code != CHT_MSG_JOIN)
 	{
 		return -1;
 	}
 
-	content  = unpack_msg(msg_buf, &pid, &code);
+	content = unpack_content(msg.mtext, &sem_key);
+	unpack_content(content, &shm_key);
 
-	if (code != CHT_MSG_JOIN)
+	st->sem = semget(sem_key, 0, S_IRUSR | S_IWUSR);
+
+
+	if (st->sem == -1)
 	{
 		return -1;
 	}
 
-	shm_str = gen_shm_name_str(pid);
-	sem_str = gen_sem_name_str(pid);
+	st->shm = shmget(shm_key, 0, 0);
 
-	if (shm_str == NULL || sem_str == NULL)
+	if (st->shm == -1)
 	{
-		free(shm_str), free(sem_str);
 		return -1;
 	}
 
 
+	st->shm_addr = shmat(st->shm, NULL, SHM_RDONLY); 
 
-	status = shm_open(shm_str, O_CREAT | O_RDWR, 0);
-	int shm_fd = status;
-
-	if (status == -1)
-	{
-		free(shm_str), free(sem_str);
+	if (st->shm_addr == (void *) -1){
 		return -1;
 	}
 
-	if (ftruncate(shm_fd, CHT_SHM_SIZE) == -1)
-	{
-		free(shm_str), free(sem_str);
-		close(shm_fd);
-       	return -1;
-	}
-
-
-    void *addr = mmap(NULL, CHT_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-
-    if (addr == MAP_FAILED)
-    {
-    	free(shm_str), free(sem_str);
-    	close(shm_fd);
-    	return -1;
-    }
-
-    st->shm_addr = addr;
-
-
-	sem_t *sem = sem_open(sem_str, 0);
-
-	st->sem = sem;
-
-
-	if (sem == SEM_FAILED)
-    {
-        free(shm_str), free(sem_str);
-        close(shm_fd);
-	    munmap(addr, CHT_SHM_SIZE);
-        return -1;
-    }
 
 	status = enter_chat_loop(st);
 
-	mq_close(st->mq_out);
 
-	sem_close(sem);
-
-	close(shm_fd);
-	munmap(addr, CHT_SHM_SIZE);
-
-	free(shm_str), free(sem_str);
 
 	wclear(st->display);
 	wrefresh(st->display);	
@@ -452,9 +402,9 @@ int enter_chat_loop(client_state_t * st)
 {
 	int quit = FALSE;
 	char text[CHT_TEXT_SIZE + 1];
-	char msg_buf[CHT_MSG_SIZE];
-	char *content;
+	char content[CHT_TEXT_SIZE + 1];
 	int status, has_exited = FALSE;
+	msg_t msg;
 
 	st->thread_ended = FALSE;
 
@@ -500,8 +450,8 @@ int enter_chat_loop(client_state_t * st)
 			if (strcmp(text, "/exit") == 0)
 			{
 				st->in_chatroom = FALSE;
-				pack_msg(msg_buf, st->pid, CHT_MSG_EXIT);
-				status = mq_send(st->mq_out, msg_buf, CHT_MSG_SIZE, 0);
+				pack_msg(&msg, st->pid, CHT_MSG_EXIT);
+				status = msgsnd(st->mq_out, &msg, CHT_TEXT_SIZE + 1, 0);
 
 				if (status == -1)
 				{
@@ -515,8 +465,8 @@ int enter_chat_loop(client_state_t * st)
 			}
 			else if (strcmp(text, "/history") == 0)
 			{
-				pack_msg(msg_buf, st->pid, CHT_MSG_HIST);
-				status = mq_send(st->mq_out, msg_buf, CHT_MSG_SIZE, 0);
+				pack_msg(&msg, st->pid, CHT_MSG_HIST);
+				status = msgsnd(st->mq_out, &msg, CHT_TEXT_SIZE + 1, 0);
 
 				if (status == -1)
 				{
@@ -536,11 +486,12 @@ int enter_chat_loop(client_state_t * st)
 		}
 		else
 		{
-			content = pack_msg(msg_buf,st->pid, CHT_MSG_TEXT);
-			strcpy(content, text);
+			strcpy(msg.mtext, text);
+
+			pack_msg(&msg, st->pid, CHT_MSG_TEXT);
 			if (strlen(text) !=0)
 			{
-				status = mq_send(st->mq_out, msg_buf, CHT_MSG_SIZE, 0);
+				status = msgsnd(st->mq_out, &msg, CHT_TEXT_SIZE + 1, 0);
 			}
 			
 			if (status == -1)
@@ -559,46 +510,52 @@ int enter_chat_loop(client_state_t * st)
 
 void *read_mq_loop(void *arg)
 {
-	char msg_buf[CHT_MSG_SIZE];
-	char *content;
+	char content[CHT_TEXT_SIZE + 1];
 	int quit = FALSE;
 	int status, i, hist_empty;
-	pid_t pid;
-	char code;
 	client_state_t *st = (client_state_t*)arg;
+	msg_t msg;
+	struct sembuf op;
 	
 	while (!quit)
 	{
-		status = mq_receive(st->mq_in, msg_buf, CHT_MSG_SIZE, NULL);
+		status =  msgrcv(st->mq_in, &msg, CHT_TEXT_SIZE + 1, 0, 0);
 
 		if (status == -1)
 		{
 			pthread_mutex_lock(&st->thread_m);
 			st->thread_ended = TRUE;
+			
 			pthread_mutex_unlock(&st->thread_m);
 			return NULL;
 		}
-		content = unpack_msg(msg_buf, &pid, &code);
 
-		switch (code)
+		switch (msg.code)
 		{
 			case CHT_MSG_TEXT:
 				pthread_mutex_lock(&st->screen_m);
-				wprintw(st->display, "%s\n", content);
+				wprintw(st->display, "%s\n", msg.mtext);
 				wrefresh(st->display);
 				pthread_mutex_unlock(&st->screen_m);
 			break;
 
 			case CHT_MSG_HIST:
 				pthread_mutex_lock(&st->screen_m);
-				sem_wait(st->sem);
+				
+				op.sem_num = 0;
+				op.sem_op = -1;
+				op.sem_flg = SEM_UNDO;
+
+				semop(st->sem,&op,1);
 
 				wprintw(st->display, "\n-- HISTORIAL --\n\n");
 
+
 				hist_empty = TRUE;
 
-				for(i =0; i < CHT_HIST_SIZE; i++){
+				wrefresh(st->display);
 
+				for(i =0; i < CHT_HIST_SIZE; i++){
 					if(strlen(st->shm_addr + (i * CHT_MSG_SIZE)) != 0 )
 					{
 						hist_empty = FALSE; 
@@ -615,8 +572,8 @@ void *read_mq_loop(void *arg)
 				wprintw(st->display, "\n---------------\n\n");
 
 				wrefresh(st->display);
-
-				sem_post(st->sem);
+				op.sem_op = 1;
+				semop(st->sem,&op,1);
 				pthread_mutex_unlock(&st->screen_m);
 			break;
 
@@ -633,7 +590,6 @@ void *read_mq_loop(void *arg)
 				pthread_mutex_unlock(&st->thread_m);
 				return NULL;
 			break;
-
 			default:
 
 			break;
@@ -643,7 +599,7 @@ void *read_mq_loop(void *arg)
 	return NULL;
 }
 
-int read_create_join_res(client_state_t *st, char *buf)
+int read_create_join_res(client_state_t *st, int *key)
 {
 	struct sv_create_join_res res;
 	int res_type = -1, status;
@@ -668,7 +624,7 @@ int read_create_join_res(client_state_t *st, char *buf)
 
 	if (res.status == SV_CREATE_SUCCESS || res.status == SV_JOIN_SUCCESS)
 	{
-		strcpy(buf, res.mq_name);
+		*key = res.mq_key;
 		return 0;
 	}
 	
@@ -877,15 +833,15 @@ void exit_cleanup(int sig)
 		wprintw(gbl_state->display,"\nCerrando sesion...\n");
 		wrefresh(gbl_state->display);
 
-		char msg_buf[CHT_MSG_SIZE];
+		msg_t msg;
+		char *content;
 
 		if (gbl_state->in_chatroom)
 		{
-			pack_msg(msg_buf, gbl_state->pid, CHT_MSG_EXIT);
-			mq_send(gbl_state->mq_out, msg_buf, CHT_MSG_SIZE, 0);
+			pack_msg(&msg, gbl_state->pid, CHT_MSG_EXIT);
+			msgsnd(gbl_state->mq_out, &msg, CHT_TEXT_SIZE + 1, 0);
 		}
 
-		char *mq_name = gen_mq_name_str(gbl_state->pid);
 		char *fifo_str = gen_client_fifo_str(gbl_state->pid);
 
 		send_server_exit(gbl_state);
@@ -893,15 +849,8 @@ void exit_cleanup(int sig)
 		close(gbl_state->sv_fifo);
 		close(gbl_state->in_fifo);
 		unlink(fifo_str);
-		mq_close(gbl_state->mq_in);
-		mq_close(gbl_state->mq_out);;
-		mq_unlink(mq_name);
-		free(mq_name);
+		msgctl(gbl_state->mq_in, IPC_RMID, NULL);
 		free(fifo_str);
-
-
-		
-
 
 		endwin();
 
