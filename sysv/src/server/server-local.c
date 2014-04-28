@@ -7,6 +7,10 @@
 #include <unistd.h>
 #include <semaphore.h>
 #include <mqueue.h>
+#include <sys/ipc.h>
+#include <sys/types.h>
+#include <sys/msg.h>
+#include <sys/stat.h>
 
 #include "server-local.h"
 #include "chatroom-local.h"
@@ -19,6 +23,7 @@
 typedef struct chatroom {
 	pid_t pid;
 	char *name;
+	int mq_key;
 	struct chatroom *next;
 } chatroom_t;
 
@@ -39,9 +44,9 @@ typedef struct server_state {
 } server_state_t;
 
 client_t *get_client(client_t *head, pid_t pid);
-int send_create_join_response(server_state_t *svstate, client_t *client, int code, int cht_pid);
+int send_create_join_response(server_state_t *svstate, client_t *client, int code, int cht_pid, int key);
 chatroom_t *chatroom_exists(chatroom_t *head, char *name);
-int fork_chat(server_state_t *svstate, char *name, pid_t creator);
+int fork_chat(server_state_t *svstate, char *name, pid_t creator, int key);
 void free_sv_users(client_t *head);
 void free_sv_chats(chatroom_t *head);
 void exit_cleanup(int sig);
@@ -167,6 +172,7 @@ int start_server(server_state_t *svstate)
 
 			case SV_DESTROY_REQ:
 
+				svstate->chat_count--;
 				status = remove_chatroom(svstate);
 				if (status == -1)
 				{
@@ -201,7 +207,7 @@ int remove_chatroom(server_state_t *svstate)
 
 	if (aux == NULL)
 	{
-		return -1;
+		return;
 	}
 
 	if (aux->pid == cht_pid)
@@ -212,7 +218,7 @@ int remove_chatroom(server_state_t *svstate)
 
 		printf("--> PID: %u chatroom eliminado.\n", cht_pid);
 
-		return 0;
+		return;
 	}
 
 	while (aux->next != NULL)
@@ -226,13 +232,13 @@ int remove_chatroom(server_state_t *svstate)
 
 			printf("--> PID: %u chatroom eliminado.\n", cht_pid);
 
-			return 0;
+			return;
 		}
 
 		aux = aux->next;
 	}
 
-	svstate->chat_count--;
+	
 
 	return 0;
 }
@@ -268,9 +274,12 @@ int create_chatroom(server_state_t *svstate)
 		status = SV_CREATE_ERROR_NAME;
 	}
 
+	int key = msgget(IPC_PRIVATE, S_IRUSR | S_IWUSR);
+
+
 	if (status == SV_CREATE_SUCCESS)
 	{
-		cht_pid = fork_chat(svstate, req.name, client->pid);
+		cht_pid = fork_chat(svstate, req.name, client->pid, key);
 	}
 
 	if (cht_pid == -1)
@@ -278,13 +287,13 @@ int create_chatroom(server_state_t *svstate)
 		return -1;
 	}
 	
-	send_create_join_response(svstate, client, status, cht_pid);
+	send_create_join_response(svstate, client, status, cht_pid, key);
 
 	return 0;
 
 }
 
-int fork_chat(server_state_t *svstate, char *name, pid_t creator)
+int fork_chat(server_state_t *svstate, char *name, pid_t creator, int key)
 {
 	chatroom_t *chatroom = malloc(sizeof(chatroom_t));
 	int fork_pid, status;
@@ -293,6 +302,8 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 	{
 		return -1;
 	} 
+
+	chatroom->mq_key = key;
 
 	chatroom->name = strdup(name);
 	if (chatroom->name == NULL)
@@ -316,7 +327,7 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 
 		case 0:
 
-			status = init_chatroom_local(name, creator);
+			status = init_chatroom_local(name, creator, key);
 
 			exit(status);
 
@@ -333,27 +344,21 @@ int fork_chat(server_state_t *svstate, char *name, pid_t creator)
 	return fork_pid;
 }
 
-int send_create_join_response(server_state_t *svstate, client_t *client, int code, int cht_pid)
+int send_create_join_response(server_state_t *svstate, client_t *client, int code, int cht_pid, int key)
 {
     struct sv_create_join_res res;
     res.status = code;
     
     if (code != SV_CREATE_SUCCESS && code != SV_JOIN_SUCCESS)
     {
-        res.mq_name[0] = 0;
+        res.mq_key = -1;
     }
     else
     {
-       char *mq_name = gen_mq_name_str(cht_pid);
-       if (mq_name == NULL)
-       {
-           return -1;
-       }
 
-       printf("--> mq_name: %s\n", mq_name);
+       printf("--> mq_key: %d\n", key);
        
-       strcpy(res.mq_name, mq_name);
-       free(mq_name);
+       res.mq_key = key;
     }
     
     int res_type = SV_CREATE_JOIN_RES;
@@ -437,7 +442,7 @@ int join_user(server_state_t *svstate)
 		code = SV_JOIN_ERROR_NAME;
 	}
 
-	send_create_join_response(svstate, client, code, cht->pid);
+	send_create_join_response(svstate, client, code, cht->pid, cht->mq_key);
 
 	return 0;
 }
@@ -676,6 +681,7 @@ chatroom_t *chatroom_exists(chatroom_t *head, char *name)
 void exit_cleanup(int sig)
 {
 	static int warned = FALSE;
+
 	if (sig == SIGINT)
 	{
 		if (gbl_state == NULL)
@@ -690,11 +696,7 @@ void exit_cleanup(int sig)
 			return;
 		}
 
-		if (gbl_state->chat_count == 0)
-		{
-			warned = FALSE;
-			return;
-		}
+
 
 		printf("\nServer: SIGINT recibido. Exit.\n");
 		close_db(gbl_state->db);
