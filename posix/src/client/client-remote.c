@@ -485,7 +485,7 @@ int enter_chat_loop(client_state_t *st, struct sockaddr_in *cht_addr)
 	wclear(st->display);
 	wprintw(st->display, "Conectado al chatroom %s.\n", st->chat_name);
 	wprintw(st->display, "Comandos validos:.\n");
-	wprintw(st->display, "   /history   /exit\n");
+	wprintw(st->display, "   /exit\n");
 	wrefresh(st->display);
 
 	/* Thread para recibir mensajes del socket */

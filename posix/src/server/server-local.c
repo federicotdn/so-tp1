@@ -431,15 +431,17 @@ int join_user(server_state_t *svstate)
 
 	cht = chatroom_exists(svstate->chat_head, req.name);
 	code = SV_JOIN_SUCCESS;
-
+	
 	if (cht == NULL)
 	{
 		code = SV_JOIN_ERROR_NAME;
+		return send_create_join_response(svstate, client, code, 0);
+	}
+	else
+	{
+		return send_create_join_response(svstate, client, code, cht->pid);
 	}
 
-	send_create_join_response(svstate, client, code, cht->pid);
-
-	return 0;
 }
 
 int login_user(server_state_t *sv_state)
