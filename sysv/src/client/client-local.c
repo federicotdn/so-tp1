@@ -326,9 +326,7 @@ int start_client(client_state_t *st)
 int enter_chat_mode(client_state_t *st, int key)
 {
 
-	char *sem_str, *shm_str;
 	int status,sem_key, shm_key;
-	pid_t pid;
 	msg_t msg;
 	char *content;
 
@@ -411,7 +409,6 @@ int enter_chat_loop(client_state_t * st)
 {
 	int quit = FALSE;
 	char text[CHT_TEXT_SIZE + 1];
-	char content[CHT_TEXT_SIZE + 1];
 	int status, has_exited = FALSE;
 	msg_t msg;
 
@@ -519,7 +516,6 @@ int enter_chat_loop(client_state_t * st)
 
 void *read_mq_loop(void *arg)
 {
-	char content[CHT_TEXT_SIZE + 1];
 	int quit = FALSE;
 	int status, i, hist_empty;
 	client_state_t *st = (client_state_t*)arg;
@@ -843,7 +839,6 @@ void exit_cleanup(int sig)
 		wrefresh(gbl_state->display);
 
 		msg_t msg;
-		char *content;
 
 		if (gbl_state->in_chatroom)
 		{

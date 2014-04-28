@@ -165,7 +165,7 @@ int init_chatroom_local(char *name, pid_t creator, int key)
 
 	free(state.name);
 
-	return 0;
+	return status;
 }	
 
 int start_chatroom(chatroom_state_t *st)
@@ -217,7 +217,6 @@ int start_chatroom(chatroom_state_t *st)
 				pack_content(content, st->shm_key);
 				pack_msg(&msg, st->pid, CHT_MSG_JOIN);
 
-				printf("CODE: %d\n", msg.code);
 				status = msgsnd(st->head->mq, &msg, CHT_TEXT_SIZE + 1, 0);
 
 				if (status == -1)

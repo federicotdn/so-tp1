@@ -567,7 +567,6 @@ void *read_socket_loop(void *arg)
 {
 	char msg_buf[SV_MSG_SIZE];
 	int quit = FALSE;
-	int i;
 	ssize_t status;
 	char code, *content;
 	client_state_t *st = (client_state_t*)arg;

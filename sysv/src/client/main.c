@@ -3,6 +3,9 @@
 #include "client-local.h"
 #include "dbaccess.h"
 
+
+void print_error(int error);
+
 int main(int argc, char *argv[])
 {
 	char password[DB_MAX_PASSLEN + 1];
@@ -34,15 +37,46 @@ int main(int argc, char *argv[])
 
 	if (status != 0)
 	{
-		printf("Error init_client. Codigo de error: %d\n", status);
-	}
-
-	if (status == ERROR_SERVER_CONNECTION)
-	{
-		printf("Error de comunicacion con el servidor.\n");
+		print_error(status);
 		return -1;
 	}
-	
-
 	return 0;
+}
+
+void print_error(int error)
+{
+	switch(error)
+	{
+		case ERROR_SERVER_CONNECTION:
+			printf("Error de conexion con el servidor(%d)\n", error);
+		break;
+
+		case ERROR_FIFO_CREAT:
+			printf("Error al crear fifo(%d)\n", error);
+		break;
+
+		case ERROR_SV_SEND:
+			printf("Error al enviar los datos  al servidor(%d)\n", error);
+		break;
+
+		case ERROR_SV_READ:
+			printf("Error al recibir los datos del servidor(%d)\n", error);
+		break;
+
+		case ERROR_FIFO_OPEN:
+			printf("Error al abrir fifo(%d)\n", error);
+		break;
+
+		case ERROR_SV_CREDENTIALS:
+			printf("Credenciales incorrectas. Verifique que su usuario y contrasena seran correctos(%d)\n", error);
+		break;
+
+		case ERROR_SV_USER_ACTIVE:
+			printf("El usuario ya se encuentra activo(%d)\n", error);
+		break;
+
+		default:
+			printf("Error al inicializar al cliente(%d)\n", error);
+		break;
+	}
 }
