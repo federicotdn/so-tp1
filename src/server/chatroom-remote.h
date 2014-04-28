@@ -5,6 +5,6 @@
 #include <arpa/inet.h>
 #include "protocol-remote.h"
 
-int init_chatroom_remote(char *name, char *ip, port_t port, struct in_addr creator);
+int init_chatroom_remote(char *name, char *ip, port_t port, struct in_addr creator, port_t sv_port);
 
 #endif

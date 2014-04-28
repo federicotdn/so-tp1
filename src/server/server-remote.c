@@ -34,6 +34,7 @@ typedef struct server_state {
 	chatroom_t *chat_head;
 	int chat_count;
 
+	port_t port;
 	char *ip_str;
 	int socket_fd;
 	port_t port_counter;
@@ -71,6 +72,7 @@ int init_server_remote(char *ip, unsigned short port)
 	sv_state.chat_head = NULL;
 	sv_state.chat_count = 0;
 	sv_state.ip_str = ip;
+	sv_state.port = port;
 	sv_state.port_counter = 40200;
 
 	if (setup_sockets(&sv_state, ip, port) == -1)
@@ -199,6 +201,7 @@ int start_server(server_state_t *svstate)
 			break;
 
 			case SV_DESTROY_REQ:
+				printf("DESTROY REQ\n");
 
 				status = remove_chatroom(svstate);
 				if (status == -1)
@@ -341,7 +344,7 @@ int fork_chat(server_state_t *svstate, char *name, struct sockaddr_in *creator)
 
 		case 0:
 			//cerrar fd socket viejo ?
-			status = init_chatroom_remote(name, svstate->ip_str, cht_port, creator->sin_addr);
+			status = init_chatroom_remote(name, svstate->ip_str, cht_port, creator->sin_addr, svstate->port);
 
 			exit(status);
 
