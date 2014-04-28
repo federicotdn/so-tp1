@@ -333,6 +333,11 @@ int fork_chat(server_state_t *svstate, char *name, struct sockaddr_in *creator)
 	svstate->chat_head = chatroom;
 	port_t cht_port = svstate->port_counter++;
 
+	struct sockaddr_in sock_addr;
+	sock_addr.sin_family = AF_INET;
+	sock_addr.sin_port = htons(svstate->port);
+	inet_pton(AF_INET, svstate->ip_str, &sock_addr.sin_addr);
+
 	switch (fork_pid = fork())
 	{
 		case -1:
@@ -344,7 +349,7 @@ int fork_chat(server_state_t *svstate, char *name, struct sockaddr_in *creator)
 
 		case 0:
 			//cerrar fd socket viejo ?
-			status = init_chatroom_remote(name, svstate->ip_str, cht_port, creator->sin_addr, svstate->port);
+			status = init_chatroom_remote(name, svstate->ip_str, cht_port, creator->sin_addr, sock_addr);
 
 			exit(status);
 

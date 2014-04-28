@@ -24,7 +24,7 @@ typedef struct chatroom_state {
 	int new;
 	client_t *head;
 
-	port_t sv_port;
+	struct sockaddr_in *sv_addr;
 	int socket_fd;
 } chatroom_state_t;
 
@@ -37,14 +37,14 @@ static int send_message_to_all(int sfd, client_t *head, char *msg_buf);
 static int exit_all_users(int fd, client_t *head, char *msg_buf);
 static client_t *get_client(client_t *head, struct sockaddr_in *cl);
 
-int init_chatroom_remote(char *name, char *ip, port_t port, struct in_addr creator, port_t sv_port)
+int init_chatroom_remote(char *name, char *ip, port_t port, struct in_addr creator, struct sockaddr_in sv_addr)
 {
 	int status;
 	chatroom_state_t state;
 	state.new = TRUE;
 	state.creator = creator;
 	state.head = NULL;
-	state.sv_port = sv_port;
+	state.sv_addr = &sv_addr;
 
 	if (signal(SIGINT, SIG_IGN) == SIG_ERR)
 	{
@@ -107,12 +107,6 @@ int start_chatroom(chatroom_state_t *st)
 	char new_content[CHT_MSG_SIZE];
 	client_t *client;
 	int i;
-
-	/* server info */
-	struct sockaddr_in server_addr;
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons(st->sv_port);
-	inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr);
 
 	/* sender info */
 	struct sockaddr sender_addr_raw;
@@ -202,27 +196,24 @@ int start_chatroom(chatroom_state_t *st)
 
 				if (client->addr.sin_addr.s_addr == st->creator.s_addr)
 				{
-					i = 3;
+					i = 1;
 					while (i >= 0)
 					{
-						sprintf(new_content, "El chatroom se cerrara en %i segundos", i--);
+						sprintf(new_content, "El chatroom se cerrara en %i segundo/s", i--);
 						send_text_to_all(st, new_content);
 						sleep(1);
 					}
 					status = exit_all_users(st->socket_fd, st->head, buf);
 
-					// struct sv_destroy_cht_req req;
-					// req.pid = st->pid;
-					// write_server(st->sv_fifo, &req, sizeof(struct sv_destroy_cht_req), SV_DESTROY_REQ);
 					buf[0] = SV_DESTROY_REQ;
-					status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)&server_addr, sizeof(struct sockaddr_in));
+					status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)st->sv_addr, sizeof(struct sockaddr_in));
 					printf("Cerrando chatroom.\n");
 
 					quit = TRUE;
 					break;
 				}
 
-				buf[0] = CHT_MSG_EXIT;
+				buf[0] = SV_DESTROY_REQ;
 				status = sendto(st->socket_fd, buf, SV_MSG_SIZE, 0, (struct sockaddr*)sender_addr, sizeof(struct sockaddr_in));
 				if (status != SV_MSG_SIZE)
 				{
